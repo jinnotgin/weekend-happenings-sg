@@ -1,0 +1,26 @@
+{
+	"name": "weekend-happenings-sg",
+	"description": "",
+	"version": "1.0.0",
+	"type": "module",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "Jin",
+	"license": "ISC",
+	"imports": {
+		"#*": "./*"
+	},
+	"dependencies": {
+		"@google-cloud/aiplatform": "^3.8.0",
+		"dotenv": "^16.3.1",
+		"jsdom": "^23.0.1",
+		"openai": "^4.20.1",
+		"puppeteer": "^21.5.2",
+		"puppeteer-extra": "^3.3.6",
+		"puppeteer-extra-plugin-stealth": "^2.11.2",
+		"tiktoken": "^1.0.11",
+		"winston": "^3.11.0"
+	}
+}

@@ -1,0 +1,81 @@
+ ```JSON
+[
+  {
+    "title": "Singapore International Film Festival 2023",
+    "category": "Arts and Culture",
+    "description": "The largest and longest-running film event in Singapore is back! Catch nominated films for the Asian Feature Film Competition and Southeast Asian Short Film Competition, movies by local directors, and spotlights for audacious works within contemporary cinema.",
+    "location": "Multiple locations including Shaw Lido, Golden Village, The Projector, and more",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Zoukout 2023",
+    "category": "Entertainment and Lifestyle",
+    "description": "Zoukout is back after a three-year hiatus. Expect DJs like Martin Garrix, Alesso, Wukong, and more spinning beats to take you through the night. Be taken on a journey that transcends time and into a future at this dusk-to-dawn party.",
+    "location": "Siloso Beach, Sentosa",
+    "datetime": "2 \u2013 3 December, Saturday \u2013 Sunday"
+  },
+  {
+    "title": "Chaos Lab",
+    "category": "Family and Kids",
+    "description": "The latest attraction to hit our shores is a wacky lab-themed experience led by resident \u201cmad scientist\u201d Dr. Splat. Chaos Lab is a family-friendly interactive laboratory filled with a series of interactive stations.",
+    "location": "Terminal 2, Changi Airport, 80 Airport Boulevard, Singapore 819642",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Solid Ground x Sivilian Affairs presents Cinthie",
+    "category": "Entertainment and Lifestyle",
+    "description": "If you didn\u2019t manage to get your tickets to Zoukout, have no fear, because there are plenty of other parties in the city to spice up your night. One of them is a collaboration between Solid Ground and Sivilian Affairs! This nighttime extravaganza is headlined by Berlin-based DJ and queen of house, Cinthie, along with other homegrown talents.",
+    "location": "MDLR, 62 Cecil Street, Singapore 049710",
+    "datetime": "1 December, Friday"
+  },
+  {
+    "title": "Rollermania 3.0 presents Singapore\u2019s first pop-up retro skate rink",
+    "category": "Entertainment and Lifestyle",
+    "description": "A full carpark level transformed into a retro skating rink? Yep, you heard it right! Take a trip back into the 70s and get the thrill of rock and roll right here in Singapore. Plaza Singapura has completely decked out what was once a dreary old carpark into a disco wonderland full of neon lights and funky music.",
+    "location": "Level 7, Plaza Singapura, 68 Orchard Road, Singapore 238839",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Pawsh Christmas Bazaar 2023",
+    "category": "Shopping and Exhibitions",
+    "description": "It\u2019s the most wonderful time of the year for both people and pups this December. For one weekend only, Pawsh Club will be hosting a Christmas bazaar within their premier dog care facility. Treat your furkid to some treats from vendors who are showcasing a wide range of pet products and services.",
+    "location": "643 Geylang Road, Singapore 389573",
+    "datetime": "2 \u2013 3 December, Saturday \u2013 Sunday"
+  },
+  {
+    "title": "Manila Galleon: From Asia to the Americas",
+    "category": "Arts and Culture",
+    "description": "This exhibition presented by Asian Civilisations Museum is Singapore\u2019s first large-scale exhibition that traces historical trade links across the Pacific. With over 140 objects spanning the 16th to the 20th century, this showcase investigates the movement of people, goods, and ideas.",
+    "location": "Asian Civilisations Museum, 1 Empress Place, Singapore 179555",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Nintendo pop-up",
+    "category": "Shopping and Exhibitions",
+    "description": "For the first time in Southeast Asia, a Nintendo store will be popping up for a limited time in Jewel Changi Airport. Lovers of Animal Crossing, Super Mario, The Legend of Zelda, Pikmin, and Splatoon can now get their hands on official merchandise.",
+    "location": "#04-220/221, Jewel Changi Airport, 80 Airport Boulevard, Singapore 819642",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Zerrin\u2019s pop-up: Crafting Change: Best of Asia",
+    "category": "Shopping and Exhibitions",
+    "description": "Zerrin\u2019s back at Anchorpoint Shopping Centre again! Discover story-led brands with sustainable practices at this pop-up experience. You\u2019ll get to snag bits and bobs from eco-conscious brands that come from all over Southeast Asia.",
+    "location": "#01-14, Anchorpoint Shopping Centre, 370 Alexandra Road, Singapore 159953",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Oppo Studio pop-up",
+    "category": "Technology and Gadgets",
+    "description": "The world of mobile photography is being taken by storm thanks to the launch of Oppo\u2019s new Find N3 series. The pop-up will feature a number of exhibitions, including a photography wall that displays works by nine local photographers that capture the majesty of Singapore.",
+    "location": "Mandarin Gallery, 333A Orchard Road, Singapore 238897",
+    "datetime": "All weekend"
+  },
+  {
+    "title": "Nom Nom Cinema",
+    "category": "Food and Drink",
+    "description": "For a unique culinary cinema experience, check this out. Nom Nom Cinema brings Wes Anderson\u2019s The Grand Budapest Hotel to life with an eccentric menu paired with themed cocktails.",
+    "location": "217 Lavender Street, Singapore 338772",
+    "datetime": "Selected dates from 23 November to 29 December 2023, 7pm to 10.30pm"
+  }
+]
+```
