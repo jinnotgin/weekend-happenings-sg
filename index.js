@@ -5,6 +5,7 @@ import {
 	URLS_TO_SCRAPE,
 	PROMPT_TEMPLATES,
 	RETRY_COUNT,
+	OPENAI,
 } from "#lib/constants.js";
 import { scrapeUrlForTextTags } from "#lib/scraper.js";
 import { saveAsText } from "#lib/diskio.js";
@@ -15,6 +16,7 @@ import {
 	parseOrRecoverJsonString,
 	removeMarkdownSyntax,
 } from "#lib/utils.js";
+import { getFirstWebLink, getFirstImageLink } from "#lib/bing-search.js";
 
 async function main() {
 	let eventsData_combinedJsonString = "";
@@ -35,9 +37,11 @@ async function main() {
 
 			logger.info(`Extracting events data as JSON for ${url}`);
 			const eventsJsonStr = await retryAsyncFunction(
-				vertex_generateText,
+				// vertex_generateText,
+				opennai_generateJson,
 				RETRY_COUNT,
-				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data)
+				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
+				{ model: OPENAI.MODEL_GPT3_5 }
 			);
 			saveAsText(eventsJsonStr, `json_${counter}.txt`);
 
@@ -59,7 +63,7 @@ async function main() {
 		opennai_generateJson,
 		RETRY_COUNT,
 		JSON.stringify(allTitles),
-		PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE
+		{ systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE }
 	);
 	const allUniqueTitles = parseOrRecoverJsonString(allUniqueTitles_jsonString);
 	logger.info(`A total of ${allUniqueTitles.length} unique events found.`, {
@@ -72,12 +76,41 @@ async function main() {
 		opennai_generateJson,
 		RETRY_COUNT,
 		eventsData_combinedJsonString,
-		PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
-			"{uniqueEvents}",
-			`- ${allUniqueTitles.join("\n- ")}`
-		)
+		{
+			systemMessage:
+				PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
+					"{uniqueEvents}",
+					`- ${allUniqueTitles.join("\n- ")}`
+				),
+		}
 	);
-	saveAsText(removeMarkdownSyntax(uniqueEventsData_jsonString), `final.json`);
+
+	const uniqueEventsData = parseOrRecoverJsonString(
+		uniqueEventsData_jsonString
+	);
+	for (let item of uniqueEventsData) {
+		const { title, location, datetime } = item;
+		const searchQuery = `"${title} ${location} ${datetime}`;
+		logger.info(`Getting link and thumbnail for ${title}`);
+
+		const link = await retryAsyncFunction(
+			getFirstWebLink,
+			RETRY_COUNT,
+			searchQuery
+		);
+
+		const thumbnail = await retryAsyncFunction(
+			getFirstImageLink,
+			RETRY_COUNT,
+			searchQuery
+		);
+
+		logger.info(`Found the following for ${title}`, { link, thumbnail });
+
+		item.link = link;
+		item.thumbnail = thumbnail;
+	}
+	saveAsText(JSON.stringify(uniqueEventsData), `final.json`);
 }
 
 try {
