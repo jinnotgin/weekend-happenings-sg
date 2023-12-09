@@ -8,7 +8,7 @@ import {
 	OPENAI,
 } from "#lib/constants.js";
 import { scrapeUrlForTextTags } from "#lib/scraper.js";
-import { saveAsText } from "#lib/diskio.js";
+import { clearDataDirectory, saveAsText, getFilePath } from "#lib/diskio.js";
 import { generateText as vertex_generateText } from "#lib/vertex.js";
 import { generateJson as opennai_generateJson } from "#lib/openai.js";
 import {
@@ -16,24 +16,29 @@ import {
 	parseOrRecoverJsonString,
 	removeMarkdownSyntax,
 } from "#lib/utils.js";
-import { getFirstWebLink, getFirstImageLink } from "#lib/bing-search.js";
+import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
 
 async function main() {
+	await clearDataDirectory();
+
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
 
 	logger.info("Starting to scrape");
-	let counter = 0;
-	for (let url of URLS_TO_SCRAPE) {
+	const sources = [];
+	for (let index = 0; index < URLS_TO_SCRAPE.length; index++) {
+		const url = URLS_TO_SCRAPE[index];
 		try {
 			logger.info(`Getting text from ${url}`);
-			const data = await retryAsyncFunction(
+			const { title = null, data = null } = await retryAsyncFunction(
 				scrapeUrlForTextTags,
 				RETRY_COUNT,
 				url
 			);
+			if (!data) throw new Error("No data available.");
 
-			saveAsText(data, `raw_${counter}.txt`);
+			sources.push({ title, url });
+			saveAsText(data, getFilePath("tmp", `raw_${index}`, "txt"));
 
 			logger.info(`Extracting events data as JSON for ${url}`);
 			const eventsJsonStr = await retryAsyncFunction(
@@ -43,16 +48,19 @@ async function main() {
 				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
 				{ model: OPENAI.MODEL_GPT3_5 }
 			);
-			saveAsText(eventsJsonStr, `json_${counter}.txt`);
+
+			saveAsText(eventsJsonStr, getFilePath("tmp", `json_${index}`, "txt"));
 
 			eventsData[url] = parseOrRecoverJsonString(eventsJsonStr);
-			eventsData_combinedJsonString += `Source: ${counter}\n${eventsJsonStr}\n===\n`;
-
-			counter++;
+			eventsData_combinedJsonString += `Source: ${index}\n${eventsJsonStr}\n===\n`;
 		} catch (error) {
 			logger.error(`Error occured when scraping ${url}`, error);
 		}
 	}
+	saveAsText(
+		JSON.stringify(sources),
+		getFilePath("compiled", `sources`, "json")
+	);
 
 	const allTitles = Object.values(eventsData)
 		.flat()
@@ -66,10 +74,14 @@ async function main() {
 		{ systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE }
 	);
 	const allUniqueTitles = parseOrRecoverJsonString(allUniqueTitles_jsonString);
+
 	logger.info(`A total of ${allUniqueTitles.length} unique events found.`, {
 		allUniqueTitles,
 	});
-	saveAsText(allUniqueTitles_jsonString, `unique_events.json`);
+	saveAsText(
+		allUniqueTitles_jsonString,
+		getFilePath("tmp", `unique_events`, "json")
+	);
 
 	logger.info("Collating the data for each unique event");
 	const uniqueEventsData_jsonString = await retryAsyncFunction(
@@ -88,29 +100,81 @@ async function main() {
 	const uniqueEventsData = parseOrRecoverJsonString(
 		uniqueEventsData_jsonString
 	);
+
+	logger.info("Generating structured datetimes");
+	const dateTimes = uniqueEventsData.map((item) => item.datetime);
+	let dateRanges = null;
+	for (let i = 0; i < RETRY_COUNT; i++) {
+		function formatDate(date = new Date()) {
+			// const day = date.toLocaleString("default", { weekday: "long" });
+			return `${date
+				.getDate()
+				.toString()
+				.padStart(2, "0")} ${date.toLocaleString("default", {
+				month: "short",
+			})} ${date.getFullYear()}`;
+		}
+		const response_dateRanges_jsonString = await retryAsyncFunction(
+			opennai_generateJson,
+			RETRY_COUNT,
+			JSON.stringify(dateTimes),
+			{
+				systemMessage:
+					PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
+						"{todayDate}",
+						formatDate()
+					),
+			}
+		);
+		const response_dateRanges = parseOrRecoverJsonString(
+			response_dateRanges_jsonString
+		);
+		if (dateTimes.length === response_dateRanges.length) {
+			dateRanges = response_dateRanges;
+			break;
+		}
+	}
+	if (dateRanges && Array.isArray(dateRanges)) {
+		dateRanges.forEach((value, index) => {
+			uniqueEventsData[index].daterange = value;
+		});
+		logger.info(`Found date ranges and added them into uniqueEventsData.`);
+	} else {
+		logger.error(
+			`Unable to convert into date ranges, LLM output length mismatched.`
+		);
+	}
+
+	logger.info("Getting event URL and images via web search");
 	for (let item of uniqueEventsData) {
-		const { title, location, datetime } = item;
-		const searchQuery = `"${title} ${location} ${datetime}`;
+		const { title = "", location = "", datetime = "" } = item;
+		const searchQuery = `"${title} singapore`;
 		logger.info(`Getting link and thumbnail for ${title}`);
 
-		const link = await retryAsyncFunction(
-			getFirstWebLink,
+		const { firstWebUrl, savedImageFileName } = await retryAsyncFunction(
+			getWebLinkAndSaveImage,
 			RETRY_COUNT,
 			searchQuery
 		);
 
-		const thumbnail = await retryAsyncFunction(
-			getFirstImageLink,
-			RETRY_COUNT,
-			searchQuery
-		);
+		logger.info(`Found the following for ${title}`, {
+			firstWebUrl,
+			savedImageFileName,
+		});
 
-		logger.info(`Found the following for ${title}`, { link, thumbnail });
-
-		item.link = link;
-		item.thumbnail = thumbnail;
+		item.link = firstWebUrl;
+		item.thumbnail = savedImageFileName;
 	}
-	saveAsText(JSON.stringify(uniqueEventsData), `final.json`);
+
+	saveAsText(
+		JSON.stringify(uniqueEventsData),
+		getFilePath("compiled", `events`, "json")
+	);
+
+	saveAsText(
+		JSON.stringify(new Date().toISOString()),
+		getFilePath("compiled", `generationTime`, "json")
+	);
 }
 
 try {

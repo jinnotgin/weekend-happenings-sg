@@ -16,6 +16,7 @@
 		"@google-cloud/aiplatform": "^3.8.0",
 		"dotenv": "^16.3.1",
 		"jsdom": "^23.0.1",
+		"nanoid": "^5.0.4",
 		"openai": "^4.20.1",
 		"puppeteer": "^21.5.2",
 		"puppeteer-extra": "^3.3.6",
