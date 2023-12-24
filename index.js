@@ -7,15 +7,11 @@ import {
 	RETRY_COUNT,
 	OPENAI,
 } from "#lib/constants.js";
-import { scrapeUrlForTextTags } from "#lib/scraper.js";
+import { scrapeUrlForTextTags } from "#lib/crawler.js";
 import { clearDataDirectory, saveAsText, getFilePath } from "#lib/diskio.js";
-import { generateText as vertex_generateText } from "#lib/vertex.js";
-import { generateJson as opennai_generateJson } from "#lib/openai.js";
-import {
-	retryAsyncFunction,
-	parseOrRecoverJsonString,
-	removeMarkdownSyntax,
-} from "#lib/utils.js";
+import { generateText as vertex_generateText } from "#lib/llm-vertex-gemini.js";
+import { generateJson as opennai_generateJson } from "#lib/llm-openai.js";
+import { retryAsyncFunction, parseOrRecoverJsonString } from "#lib/utils.js";
 import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
 
 async function main() {
