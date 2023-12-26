@@ -73,7 +73,10 @@ export async function main() {
 		opennai_generateJson,
 		RETRY_COUNT,
 		JSON.stringify(allTitles),
-		{ systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE }
+		{
+			systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
+			temperature: 0,
+		}
 	);
 	const allUniqueTitles = parseOrRecoverJsonString(allUniqueTitles_jsonString);
 
