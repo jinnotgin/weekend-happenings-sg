@@ -8,13 +8,19 @@ import {
 	OPENAI,
 } from "#lib/constants.js";
 import { scrapeUrlForTextTags } from "#lib/crawler.js";
-import { clearDataDirectory, saveAsText, getFilePath } from "#lib/diskio.js";
+import {
+	clearDataDirectory,
+	saveAsText,
+	getFilePath,
+	getDirectoryPath,
+} from "#lib/diskio.js";
 import { generateText as vertex_generateText } from "#lib/llm-vertex-gemini.js";
 import { generateJson as opennai_generateJson } from "#lib/llm-openai.js";
 import { retryAsyncFunction, parseOrRecoverJsonString } from "#lib/utils.js";
 import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
+import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
-async function main() {
+export async function main() {
 	await clearDataDirectory();
 
 	let eventsData_combinedJsonString = "";
@@ -171,10 +177,6 @@ async function main() {
 		JSON.stringify(new Date().toISOString()),
 		getFilePath("compiled", `generationTime`, "json")
 	);
-}
 
-try {
-	await main();
-} catch (error) {
-	logger.error(`error: ${error.message}`);
+	return await uploadAndUpdateLatest(getDirectoryPath("compiled"));
 }
