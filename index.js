@@ -153,22 +153,28 @@ export async function main() {
 	logger.info("Getting event URL and images via web search");
 	for (let item of uniqueEventsData) {
 		const { title = "", location = "", datetime = "" } = item;
-		const searchQuery = `"${title} singapore`;
-		logger.info(`Getting link and thumbnail for ${title}`);
+		try {
+			const searchQuery = `"${title} singapore`;
+			logger.info(`Getting link and thumbnail for ${title}`);
 
-		const { firstWebUrl, savedImageFileName } = await retryAsyncFunction(
-			getWebLinkAndSaveImage,
-			RETRY_COUNT,
-			searchQuery
-		);
+			const { firstWebUrl, savedImageFileName } = await retryAsyncFunction(
+				getWebLinkAndSaveImage,
+				RETRY_COUNT,
+				searchQuery
+			);
 
-		logger.info(`Found the following for ${title}`, {
-			firstWebUrl,
-			savedImageFileName,
-		});
+			logger.info(`Found the following for ${title}`, {
+				firstWebUrl,
+				savedImageFileName,
+			});
 
-		item.link = firstWebUrl;
-		item.thumbnail = savedImageFileName;
+			item.link = firstWebUrl;
+			item.thumbnail = savedImageFileName;
+		} catch (error) {
+			logger.error(
+				`Unable to fetch link / image for ${title}: ${error.message}`
+			);
+		}
 	}
 
 	saveAsText(
