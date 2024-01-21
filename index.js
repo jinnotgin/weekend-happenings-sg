@@ -17,7 +17,8 @@ import {
 import { generateText as vertex_generateText } from "#lib/llm-vertex-gemini.js";
 import { generateJson as opennai_generateJson } from "#lib/llm-openai.js";
 import { retryAsyncFunction, parseOrRecoverJsonString } from "#lib/utils.js";
-import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
+// import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
+import { getWebLinkAndSaveImage } from "#lib/google-search.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
 export async function main() {
