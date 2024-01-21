@@ -2,7 +2,9 @@ import "dotenv/config";
 
 import logger from "#lib/logger.js";
 import {
-	URLS_TO_SCRAPE,
+	// URLS_TO_SCRAPE,
+	SERACH_TERM_FOR_EVENTS,
+	BLACKLISTED_DOMAINS,
 	PROMPT_TEMPLATES,
 	RETRY_COUNT,
 	OPENAI,
@@ -18,7 +20,10 @@ import { generateText as vertex_generateText } from "#lib/llm-vertex-gemini.js";
 import { generateJson as opennai_generateJson } from "#lib/llm-openai.js";
 import { retryAsyncFunction, parseOrRecoverJsonString } from "#lib/utils.js";
 // import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
-import { getWebLinkAndSaveImage } from "#lib/google-search.js";
+import {
+	getSearchResultsUrls,
+	getWebLinkAndSaveImage,
+} from "#lib/google-search.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
 export async function main() {
@@ -26,6 +31,19 @@ export async function main() {
 
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
+
+	const URLS_TO_SCRAPE = (
+		await retryAsyncFunction(
+			getSearchResultsUrls,
+			RETRY_COUNT,
+			SERACH_TERM_FOR_EVENTS
+		)
+	).filter(
+		(url) =>
+			!BLACKLISTED_DOMAINS.some((blacklistedUrl) =>
+				url.includes(blacklistedUrl)
+			)
+	);
 
 	logger.info("Starting to scrape");
 	const sources = [];
