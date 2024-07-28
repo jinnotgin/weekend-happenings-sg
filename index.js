@@ -32,11 +32,13 @@ export async function main() {
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
 
+	const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
 	const URLS_TO_SCRAPE = (
 		await retryAsyncFunction(
 			getSearchResultsUrls,
 			RETRY_COUNT,
-			SERACH_TERM_FOR_EVENTS
+			SERACH_TERM_FOR_EVENTS,
+			NUMBER_OF_SEARCH_PAGE_RESULTS
 		)
 	).filter(
 		(url) =>
@@ -67,7 +69,7 @@ export async function main() {
 				opennai_generateJson,
 				RETRY_COUNT,
 				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
-				{ model: OPENAI.MODEL_GPT3_5 }
+				{ model: OPENAI.MODEL_GPT4o_MINI }
 			);
 
 			saveAsText(eventsJsonStr, getFilePath("tmp", `json_${index}`, "txt"));
@@ -95,6 +97,7 @@ export async function main() {
 		{
 			systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
 			temperature: 0,
+			model: OPENAI.MODEL_GPT4o_MINI,
 		}
 	);
 	const allUniqueTitles = parseOrRecoverJsonString(allUniqueTitles_jsonString);
@@ -118,6 +121,7 @@ export async function main() {
 					"{uniqueEvents}",
 					`- ${allUniqueTitles.join("\n- ")}`
 				),
+			model: OPENAI.MODEL_GPT4o_MINI,
 		}
 	);
 
@@ -126,11 +130,8 @@ export async function main() {
 	);
 
 	logger.info("Generating structured datetimes");
-	const dateTimes = uniqueEventsData.map((item) => item.datetime);
-	let dateRanges = null;
-	for (let i = 0; i < RETRY_COUNT; i++) {
+	async function processDateRange(datetime, retryCount = 3) {
 		function formatDate(date = new Date()) {
-			// const day = date.toLocaleString("default", { weekday: "long" });
 			return `${date
 				.getDate()
 				.toString()
@@ -138,35 +139,61 @@ export async function main() {
 				month: "short",
 			})} ${date.getFullYear()}`;
 		}
-		const response_dateRanges_jsonString = await retryAsyncFunction(
-			opennai_generateJson,
-			RETRY_COUNT,
-			JSON.stringify(dateTimes),
-			{
-				systemMessage:
-					PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
-						"{todayDate}",
-						formatDate()
-					),
-			}
-		);
-		const response_dateRanges = parseOrRecoverJsonString(
-			response_dateRanges_jsonString
-		);
-		if (dateTimes.length === response_dateRanges.length) {
-			dateRanges = response_dateRanges;
-			break;
+
+		function isValidDateRange(dateRange) {
+			return Array.isArray(dateRange) && dateRange.length === 2;
 		}
-	}
-	if (dateRanges && Array.isArray(dateRanges)) {
-		dateRanges.forEach((value, index) => {
-			uniqueEventsData[index].daterange = value;
-		});
-		logger.info(`Found date ranges and added them into uniqueEventsData.`);
-	} else {
-		logger.error(
-			`Unable to convert into date ranges, LLM output length mismatched.`
+
+		for (let attempt = 0; attempt < retryCount; attempt++) {
+			const response_dateRange_jsonString = await retryAsyncFunction(
+				opennai_generateJson,
+				RETRY_COUNT,
+				JSON.stringify([datetime]),
+				{
+					systemMessage:
+						PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
+							"{todayDate}",
+							formatDate()
+						),
+					model: OPENAI.MODEL_GPT4o_MINI,
+				}
+			);
+
+			const response_dateRange = parseOrRecoverJsonString(
+				response_dateRange_jsonString
+			);
+			const dateRange = response_dateRange[0];
+
+			if (isValidDateRange(dateRange)) {
+				return dateRange;
+			}
+
+			logger.warn(
+				`Attempt ${
+					attempt + 1
+				}: Received null daterange for datetime: ${datetime}. Retrying...`
+			);
+		}
+
+		throw new Error(
+			`Failed to generate valid daterange for datetime: ${datetime} after ${retryCount} attempts`
 		);
+	}
+
+	for (let item of uniqueEventsData) {
+		try {
+			logger.info(`Processing date range for event: ${item.title}`);
+			const dateRange = await processDateRange(item.datetime);
+			item.daterange = dateRange;
+			logger.info(`Successfully added date range for event: ${item.title}`);
+		} catch (error) {
+			logger.error(
+				`Error processing date range for event: ${item.title}`,
+				error
+			);
+			// You might want to set a default value or flag here
+			item.daterange = "Error: Unable to process";
+		}
 	}
 
 	logger.info("Getting event URL and images via web search");
