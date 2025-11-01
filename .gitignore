@@ -127,7 +127,6 @@ dist
 .pnp.*
 
 .DS_Store
-secrets.js
 google-service-account.json
 database.sqlite
 data/

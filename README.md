@@ -33,44 +33,7 @@ Scripted pipeline that scrapes Singapore event listings, deduplicates them with 
    BING_SEARCH_API_KEY=your_bing_key
    ```
 
-3. **Create `config/secrets.js`**  
-   Centralise access to secrets in `config/secrets.js`. Add the file (and directory, if it does not exist) with the following structure:
-   ```js
-   // config/secrets.js
-   export const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-   export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-   export const BING_SEARCH_API_KEY = process.env.BING_SEARCH_API_KEY ?? null;
-
-   export const GOOGLE_WEB_SEARCH_API_KEY = process.env.GOOGLE_WEB_SEARCH_API_KEY;
-   export const GOOGLE_WEB_SEARCH_ENGINE_ID = process.env.GOOGLE_WEB_SEARCH_ENGINE_ID;
-
-   export const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-   export const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-   export const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
-   export const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-
-   if (!GOOGLE_WEB_SEARCH_API_KEY || !GOOGLE_WEB_SEARCH_ENGINE_ID) {
-     throw new Error("Google Custom Search credentials are required.");
-   }
-   if (
-     !R2_ACCOUNT_ID ||
-     !R2_BUCKET_NAME ||
-     !R2_ACCESS_KEY_ID ||
-     !R2_SECRET_ACCESS_KEY
-   ) {
-     throw new Error("Cloudflare R2 credentials are required.");
-   }
-
-   if (!GEMINI_API_KEY) {
-     throw new Error("GEMINI_API_KEY is required.");
-   }
-   if (!OPENAI_API_KEY) {
-     throw new Error("OPENAI_API_KEY is required.");
-   }
-   ```
-   Populate the referenced environment variables in `.env` (or your runtime environment).
-
-4. **(First run on GCP) Install Chrome dependencies**  
+3. **(First run on GCP) Install Chrome dependencies**  
    If you deploy to Google Cloud with a build step, run `npm run gcp-build` once so Puppeteer downloads the Chromium bundle.
 
 ## Running the pipeline
