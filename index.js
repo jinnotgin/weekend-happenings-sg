@@ -73,7 +73,10 @@ export async function main() {
 			eventsData[url] = parseOrRecoverJsonString(eventsJsonStr);
 			eventsData_combinedJsonString += `Source: ${index}\n${eventsJsonStr}\n===\n`;
 		} catch (error) {
-			logger.error(`Error occured when scraping ${url}`, error);
+			logger.error(`Error occured when scraping ${url}`, {
+				errorMessage: error?.message,
+				stack: error?.stack,
+			});
 		}
 	}
 	saveAsText(
