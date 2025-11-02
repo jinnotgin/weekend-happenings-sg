@@ -50,14 +50,17 @@ function generateSearchTerms(baseTerm) {
 
 export async function main() {
 	await clearDataDirectory();
+	logger.info("Stage: Data directory cleared");
 
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
 
 	const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
+	logger.info("Stage: Generating search terms");
 	const searchTerms = generateSearchTerms(SERACH_TERM_FOR_EVENTS);
 	logger.info("Search terms in use", { searchTerms });
 
+	logger.info("Stage: Fetching search results");
 	const urlsBySearchTerm = await Promise.all(
 		searchTerms.map(async (searchTerm) => {
 			const urls = await retryAsyncFunction(
@@ -78,9 +81,14 @@ export async function main() {
 			)
 	);
 	logger.info(`Total unique urls to scrape: ${URLS_TO_SCRAPE.length}`);
+	logger.info("Stage: Search results collected", {
+		totalUniqueUrls: URLS_TO_SCRAPE.length,
+		searchTermCount: searchTerms.length,
+	});
 
-	logger.info("Starting to scrape");
+	logger.info("Stage: Scraping sources started");
 	const sources = [];
+	let scrapeFailures = 0;
 	for (let index = 0; index < URLS_TO_SCRAPE.length; index++) {
 		const url = URLS_TO_SCRAPE[index];
 		try {
@@ -110,12 +118,17 @@ export async function main() {
 			eventsData[url] = parsedEvents;
 			eventsData_combinedJsonString += `Source: ${index}\n${eventsJsonStr}\n===\n`;
 		} catch (error) {
+			scrapeFailures += 1;
 			logger.error(`Error occured when scraping ${url}`, {
 				errorMessage: error?.message,
 				stack: error?.stack,
 			});
 		}
 	}
+	logger.info("Stage: Scraping sources completed", {
+		successfulSources: sources.length,
+		failedSources: scrapeFailures,
+	});
 	saveAsText(
 		JSON.stringify(sources),
 		getFilePath("compiled", `sources`, "json")
@@ -125,12 +138,24 @@ export async function main() {
 		.flat()
 		.map((item) => item.title);
 
-	logger.info("Generating a list of unique events");
+	logger.info("Stage: Generating unique event titles");
 	const {
 		rawJson: allUniqueTitles_jsonString,
 		parsedJson: allUniqueTitles,
 	} = await retryAsyncFunction(
-		generateAndParseJson,
+		async (...args) => {
+			const result = await generateAndParseJson(...args);
+			if (!Array.isArray(result?.parsedJson) || result.parsedJson.length === 0) {
+				logger.warn("Unique events payload invalid", {
+					parsedJsonType: Array.isArray(result?.parsedJson)
+						? "array"
+						: typeof result?.parsedJson,
+					rawJsonPreview: result?.rawJson?.slice(0, 200),
+				});
+				throw new Error("LLM returned an invalid unique events array");
+			}
+			return result;
+		},
 		RETRY_COUNT,
 		JSON.stringify(allTitles),
 		{
@@ -147,7 +172,7 @@ export async function main() {
 		getFilePath("tmp", `unique_events`, "json")
 	);
 
-	logger.info("Collating the data for each unique event");
+	logger.info("Stage: Collating data for each unique event");
 	const isGeminiPrimary = LLM_PREFERENCES.PRIMARY?.PROVIDER === "gemini";
 	const toolGuidance = isGeminiPrimary
 		? "If you cannot confirm a field (especially location or datetime) from the provided data, use the available Google Search tool to look up authoritative sources, resolve the missing information, and cite the source numbers you relied on. Think through the merges carefully to avoid duplicates or inconsistencies before responding."
@@ -174,7 +199,7 @@ export async function main() {
 		getFilePath("tmp", `unique_events_data`, "json")
 	);
 
-	logger.info("Generating structured datetimes");
+	logger.info("Stage: Generating structured datetimes");
 	async function processDateRange(datetime, retryCount = 3) {
 		function formatDate(date = new Date()) {
 			return `${date
@@ -236,7 +261,9 @@ export async function main() {
 		}
 	}
 
-	logger.info("Getting event URL and images via web search");
+	logger.info("Stage: Structured datetimes generation completed");
+
+	logger.info("Stage: Resolving event links and thumbnails");
 	for (let item of uniqueEventsData) {
 		const { title = "", location = "", datetime = "" } = item;
 		try {
@@ -262,6 +289,9 @@ export async function main() {
 			);
 		}
 	}
+	logger.info("Stage: Event link and thumbnail resolution completed");
+
+	logger.info("Stage: Writing compiled artifacts to disk");
 
 	saveAsText(
 		JSON.stringify(uniqueEventsData),
@@ -275,6 +305,7 @@ export async function main() {
 
 	const compiledDir = getDirectoryPath("compiled");
 	try {
+		logger.info("Stage: Uploading compiled artifacts to R2");
 		await retryAsyncFunction(async () => {
 			const success = await uploadAndUpdateLatest(compiledDir);
 			if (!success) {
