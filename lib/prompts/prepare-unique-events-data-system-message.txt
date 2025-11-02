@@ -19,7 +19,7 @@ Each **event object** must contain:
 -   `title` (String): The name of the event.
 -   `description` (String): A brief summary of the event (1-2 sentences). Choose the most comprehensive and descriptive summary from the sources.
 -   `datetime` (String): The specific date, date range, or time of the event. Prefer the most precise date information.
--   `category` (Array of Strings): Classify the event using categories from the list: {{EVENT_CATEGORIES}}.
+-   `category` (Array of Strings): Classify the event using categories from the **Category Guidance**.
 -   `locations` (Array of Objects): An array containing all unique location objects for the event, merged from all sources.
 -   `source` (Array of Integers): An array of the zero-based indices of the data sources this event was found in.
 
@@ -32,14 +32,11 @@ Each **location object** must contain:
 
 ### Guidance
 
+**Category Guidance:**
+{{EVENT_CATEGORY_GUIDANCE}}
+
 **Region Guidance:**
--   **Central:** Marina Bay/CBD, Orchard, Bugis–Bras Basah, Chinatown, Little India, Kampong Glam, Tiong Bahru, Holland Village, Dempsey, Novena–Balestier, Bukit Timah
--   **East:** Katong–Joo Chiat, Geylang, Paya Lebar, East Coast Park, Tampines, Pasir Ris, Changi (incl. Airport/Jewel)
--   **North-East:** Serangoon–NEX, Kovan, Hougang, Sengkang, Punggol
--   **North:** Yishun, Sembawang, Woodlands, Mandai, Kranji
--   **West:** Clementi, West Coast, Jurong East/Lakeside, Jurong West/Boon Lay, Bukit Batok, Hillview, Tuas
--   **Islands & Offshore:** Sentosa, Pulau Ubin, Southern Islands
+{{REGION_GUIDANCE}}
 
 **MRT Naming Guidance:**
--   Format: `Station Name (LineCodeStationNumber)`
--   Example: `Downtown MRT (DT17)`
+{{MRT_NAMING_GUIDANCE}}
