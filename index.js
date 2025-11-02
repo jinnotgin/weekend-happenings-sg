@@ -32,6 +32,22 @@ async function generateAndParseJson(promptStr = "", options = {}) {
 	return { rawJson, parsedJson };
 }
 
+function formatMonthYear(date) {
+	return `${date.toLocaleString("en-US", { month: "short" })} ${date.getFullYear()}`;
+}
+
+function generateSearchTerms(baseTerm) {
+	const normalizedBase = baseTerm.trim();
+	const today = new Date();
+	const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+	return [
+		`${normalizedBase} this weekend`,
+		`${normalizedBase} in ${formatMonthYear(today)}`,
+		`${normalizedBase} in ${formatMonthYear(nextMonthDate)}`,
+	];
+}
+
 export async function main() {
 	await clearDataDirectory();
 
@@ -39,19 +55,29 @@ export async function main() {
 	const eventsData = {};
 
 	const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
-	const URLS_TO_SCRAPE = (
-		await retryAsyncFunction(
-			getSearchResultsUrls,
-			RETRY_COUNT,
-			SERACH_TERM_FOR_EVENTS,
-			NUMBER_OF_SEARCH_PAGE_RESULTS
-		)
-	).filter(
+	const searchTerms = generateSearchTerms(SERACH_TERM_FOR_EVENTS);
+	logger.info("Search terms in use", { searchTerms });
+
+	const urlsBySearchTerm = await Promise.all(
+		searchTerms.map(async (searchTerm) => {
+			const urls = await retryAsyncFunction(
+				getSearchResultsUrls,
+				RETRY_COUNT,
+				searchTerm,
+				NUMBER_OF_SEARCH_PAGE_RESULTS
+			);
+			logger.info(`Fetched ${urls.length} urls`, { searchTerm });
+			return urls;
+		})
+	);
+
+	const URLS_TO_SCRAPE = [...new Set(urlsBySearchTerm.flat())].filter(
 		(url) =>
 			!BLACKLISTED_DOMAINS.some((blacklistedUrl) =>
 				url.includes(blacklistedUrl)
 			)
 	);
+	logger.info(`Total unique urls to scrape: ${URLS_TO_SCRAPE.length}`);
 
 	logger.info("Starting to scrape");
 	const sources = [];
@@ -109,7 +135,7 @@ export async function main() {
 		JSON.stringify(allTitles),
 		{
 			systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
-			temperature: 0,
+			// temperature: 0,
 		}
 	);
 
