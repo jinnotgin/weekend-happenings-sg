@@ -4,7 +4,7 @@ import logger from "#lib/logger.js";
 import {
 	FIXED_URLS_TO_SCRAPE,
 	SCRAPER_OPTIONS,
-	SERACH_TERM_FOR_EVENTS,
+	SEARCH_TERM_FOR_EVENTS,
 	BLACKLISTED_DOMAINS,
 	PROMPT_TEMPLATES,
 	RETRY_COUNT,
@@ -66,7 +66,7 @@ export async function main() {
 	if (shouldPerformWebSearch) {
 		const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
 		logger.info("Stage: Generating search terms");
-		searchTerms = generateSearchTerms(SERACH_TERM_FOR_EVENTS);
+		searchTerms = generateSearchTerms(SEARCH_TERM_FOR_EVENTS);
 		logger.info("Search terms in use", { searchTerms });
 
 		logger.info("Stage: Fetching search results");

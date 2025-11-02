@@ -78,7 +78,7 @@ The `compiled/` folder is uploaded to Cloudflare R2 and mirrored to both `latest
 Most knobs live in `lib/constants.js`:
 - `FIXED_URLS_TO_SCRAPE` seeds the crawler with known event feeds.
 - `SCRAPER_OPTIONS.PERFORM_WEB_SEARCH` reads from `PERFORM_WEB_SEARCH` to control Google discovery.
-- `SERACH_TERM_FOR_EVENTS` (typo noted) is expanded into several monthly/weekend search phrases.
+- `SEARCH_TERM_FOR_EVENTS` is expanded into several monthly/weekend search phrases.
 - `BLACKLISTED_DOMAINS` filters out noisy hosts before scraping.
 - `PROMPT_TEMPLATES` load markdown instructions from `lib/prompts/` for the parsing, deduping, consolidation, and date range stages. Tweak these to change LLM behaviour.
 - `LLM_PREFERENCES` sets the ordered list of providers/models (`gemini-2.5-flash` by default, with OpenAI `gpt-5-mini` as fallback). Adjust this if you prefer other models.
