@@ -10,6 +10,6 @@ For items that are a single date, return the same date for both startDateTime an
 
 For items that is a range with no start date (e.g Until xxxx), assume they have been available since 01 Jan 1970.
 
-Respond a single JSON object, with a key of "dateRanges", and the value being an overall array that contains all daterange arrays. 
+Respond with a single JSON object, with a key of "dateRanges" whose value is an array of two-item arrays describing the ranges. The response must satisfy the `DateRanges` schema: keep the `dateRanges` array present even when every entry is `[null, null]`.
 
 Respond without any helper text or explanation. Return the JSON directly, without any markdown code syntax.
