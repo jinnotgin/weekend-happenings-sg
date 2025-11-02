@@ -2,7 +2,8 @@ import "dotenv/config";
 
 import logger from "#lib/logger.js";
 import {
-	// URLS_TO_SCRAPE,
+	FIXED_URLS_TO_SCRAPE,
+	SCRAPER_OPTIONS,
 	SERACH_TERM_FOR_EVENTS,
 	BLACKLISTED_DOMAINS,
 	PROMPT_TEMPLATES,
@@ -49,42 +50,59 @@ export async function main() {
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
 
-	const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
-	logger.info("Stage: Generating search terms");
-	const searchTerms = generateSearchTerms(SERACH_TERM_FOR_EVENTS);
-	logger.info("Search terms in use", { searchTerms });
+	const shouldPerformWebSearch = Boolean(SCRAPER_OPTIONS?.PERFORM_WEB_SEARCH);
+	const fixedUrls = Array.isArray(FIXED_URLS_TO_SCRAPE)
+		? FIXED_URLS_TO_SCRAPE
+		: [];
+	let searchTerms = [];
+	let searchResultUrls = [];
 
-	logger.info("Stage: Fetching search results");
-	const urlsBySearchTerm = await Promise.all(
-		searchTerms.map(async (searchTerm) => {
-			const urls = await retryAsyncFunction(
-				getSearchResultsUrls,
-				RETRY_COUNT,
-				searchTerm,
-				NUMBER_OF_SEARCH_PAGE_RESULTS
-			);
-			logger.info(`Fetched ${urls.length} urls`, { searchTerm });
-			return urls;
-		})
-	);
+	if (shouldPerformWebSearch) {
+		const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
+		logger.info("Stage: Generating search terms");
+		searchTerms = generateSearchTerms(SERACH_TERM_FOR_EVENTS);
+		logger.info("Search terms in use", { searchTerms });
 
-	const URLS_TO_SCRAPE = [...new Set(urlsBySearchTerm.flat())].filter(
+		logger.info("Stage: Fetching search results");
+		const urlsBySearchTerm = await Promise.all(
+			searchTerms.map(async (searchTerm) => {
+				const urls = await retryAsyncFunction(
+					getSearchResultsUrls,
+					RETRY_COUNT,
+					searchTerm,
+					NUMBER_OF_SEARCH_PAGE_RESULTS
+				);
+				logger.info(`Fetched ${urls.length} urls`, { searchTerm });
+				return urls;
+			})
+		);
+
+		searchResultUrls = [...new Set(urlsBySearchTerm.flat())];
+		logger.info("Stage: Search results collected", {
+			totalUniqueUrls: searchResultUrls.length,
+			searchTermCount: searchTerms.length,
+		});
+	} else {
+		logger.info("Stage: Web search disabled; skipping Google search results");
+	}
+
+	const urlsToScrape = [...new Set([...fixedUrls, ...searchResultUrls])].filter(
 		(url) =>
 			!BLACKLISTED_DOMAINS.some((blacklistedUrl) =>
 				url.includes(blacklistedUrl)
 			)
 	);
-	logger.info(`Total unique urls to scrape: ${URLS_TO_SCRAPE.length}`);
-	logger.info("Stage: Search results collected", {
-		totalUniqueUrls: URLS_TO_SCRAPE.length,
-		searchTermCount: searchTerms.length,
+	logger.info("Stage: Preparing URL list", {
+		fixedUrlCount: fixedUrls.length,
+		searchResultUrlCount: searchResultUrls.length,
 	});
+	logger.info(`Total unique urls to scrape: ${urlsToScrape.length}`);
 
 	logger.info("Stage: Scraping sources started");
 	const sources = [];
 	let scrapeFailures = 0;
-	for (let index = 0; index < URLS_TO_SCRAPE.length; index++) {
-		const url = URLS_TO_SCRAPE[index];
+	for (let index = 0; index < urlsToScrape.length; index++) {
+		const url = urlsToScrape[index];
 		try {
 			logger.info(`Getting text from ${url}`);
 			const { title = null, data = null } = await retryAsyncFunction(

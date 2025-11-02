@@ -29,6 +29,9 @@ Scripted pipeline that scrapes Singapore event listings, deduplicates them with 
    R2_ACCESS_KEY_ID=your_r2_access_key
    R2_SECRET_ACCESS_KEY=your_r2_secret_key
 
+   # Optional: set to false to skip Google web searches
+   PERFORM_WEB_SEARCH=true
+
    # Optional: only needed if you switch back to the Bing helper
    BING_SEARCH_API_KEY=your_bing_key
    ```
@@ -52,6 +55,6 @@ Scripted pipeline that scrapes Singapore event listings, deduplicates them with 
 Logs are written to the console and to rotating files in `logs/`.
 
 ## Customisation
-- Adjust `SERACH_TERM_FOR_EVENTS`, `BLACKLISTED_DOMAINS`, or the static `URLS_TO_SCRAPE` in `lib/constants.js` to target different queries.
+- Adjust `SERACH_TERM_FOR_EVENTS`, `BLACKLISTED_DOMAINS`, the static `FIXED_URLS_TO_SCRAPE`, or toggle the `PERFORM_WEB_SEARCH` environment variable (see `lib/constants.js`) to target different queries.
 - Update `PROMPT_TEMPLATES` in the same file to tweak how the LLM summarises and deduplicates events.
  
