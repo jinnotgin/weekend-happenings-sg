@@ -16,8 +16,8 @@ import {
 	getFilePath,
 	getDirectoryPath,
 } from "#lib/diskio.js";
-import { generateJsonWithFallback } from "#lib/llm-gateway.js";
-import { retryAsyncFunction, parseOrRecoverJsonString } from "#lib/utils.js";
+import { generateAndParseJson } from "#lib/llm-gateway.js";
+import { retryAsyncFunction } from "#lib/utils.js";
 // import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
 import {
 	getSearchResultsUrls,
@@ -25,12 +25,6 @@ import {
 } from "#lib/google-search.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
-async function generateAndParseJson(promptStr = "", options = {}) {
-	const rawJson = await generateJsonWithFallback(promptStr, options);
-	const parsedJson = parseOrRecoverJsonString(rawJson);
-
-	return { rawJson, parsedJson };
-}
 
 function formatMonthYear(date) {
 	return `${date.toLocaleString("en-US", { month: "short" })} ${date.getFullYear()}`;
@@ -175,8 +169,8 @@ export async function main() {
 	logger.info("Stage: Collating data for each unique event");
 	const isGeminiPrimary = LLM_PREFERENCES.PRIMARY?.PROVIDER === "gemini";
 	const toolGuidance = isGeminiPrimary
-		? "If you cannot confirm a field (especially location or datetime) from the provided data, use the available Google Search tool to look up authoritative sources, resolve the missing information, and cite the source numbers you relied on. Think through the merges carefully to avoid duplicates or inconsistencies before responding."
-		: "If you cannot confirm a field (especially location or datetime) from the provided data, do not invent new information. Note the missing details explicitly, proceed with the sources you have, and think through the merges carefully to avoid duplicates or inconsistencies.";
+		? "If you cannot confirm a field (especially datetime) from the provided data, use the available Google Search tool to look up authoritative sources, and attempt to resolve the missing information."
+		: "";
 	const {
 		rawJson: uniqueEventsData_jsonString,
 		parsedJson: uniqueEventsData,

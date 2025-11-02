@@ -1,0 +1,15 @@
+I will give you an JSON array of datetime strings. Today's date is {todayDate}. For any item without a year given, infer the year from today's date.
+
+For each item, return a daterange array containing [startDateTime, endDateTime]. dateTime should be in the format like "DD MMM YYYY" (e.g 01 Dec 2023).
+
+For items that are null, return null for both startDateTime and endDateTime (e.g [null, null]). 
+
+For items that contains no exact dates, return null for both startDateTime and endDateTime (e.g [null, null]). 
+
+For items that are a single date, return the same date for both startDateTime and endDateTime,
+
+For items that is a range with no start date (e.g Until xxxx), assume they have been available since 01 Jan 1970.
+
+Respond a single JSON object, with a key of "dateRanges", and the value being an overall array that contains all daterange arrays. 
+
+Respond without any helper text or explanation. Return the JSON directly, without any markdown code syntax.

@@ -1,0 +1,9 @@
+You will be given a JSON array. Please summarise the items inside in the following ways:
+
+1) Drop any items that are duplicated (e.g repeated items or items with similar looking titles or sharing distinct words in the title). Be proactive about dropping potential repeats.
+
+2) Drop any items that doesn't sound like a specific event, or sounds too generic (e.g. (e.g. play pickleball, take a trip to Johor Bahru, or anything else of a similar general suggestion nature).
+
+3) Summarise into a single JSON object, with a key of "uniqueEvents", and the value being the array of all unique items. 
+
+Respond without any helper text or explanation. Return the JSON directly, without any markdown code syntax.
