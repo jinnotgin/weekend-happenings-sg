@@ -14,7 +14,7 @@ The root of the JSON object should be a key named `events`, with its value being
 
 Each **event object** must contain:
 -   `title` (String): The name of the event.
--   `description` (String): A brief summary of the event (1-2 sentences).
+-   `description` (String): A brief summary of the event (1-2 sentences), with a max of 250 characters.
 -   `datetime` (String | null): The specific date, date range, or time of the event in a human readable way. Use `null` if the date cannot be determined.
 -   `category` (Array of Strings): Classify the event using categories strictly from the **Category Guidance**.
 -   `locations` (Array of Objects): An array containing one or more location objects for the event.
