@@ -6,9 +6,9 @@ import {
 	SCRAPER_OPTIONS,
 	SEARCH_TERM_FOR_EVENTS,
 	BLACKLISTED_DOMAINS,
-	PROMPT_TEMPLATES,
-	RETRY_COUNT,
-	LLM_PREFERENCES,
+        PROMPT_TEMPLATES,
+        RETRY_COUNT,
+        LLM_TASK_PREFERENCES,
 } from "#lib/constants.js";
 import { scrapeUrlForTextTags } from "#lib/crawler.js";
 import {
@@ -122,20 +122,22 @@ export async function main() {
 			saveAsText(data, getFilePath("tmp", `raw_${index}`, "txt"));
 
 			logger.info(`Extracting events data as JSON for ${url}`);
-			const {
-				rawJson: eventsJsonStr,
-				parsedJson: parsedEventsPayload,
-			} = await retryAsyncFunction(
-				generateAndParseJson,
-				RETRY_COUNT,
-				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
-				{
-					responseSchema: {
-						name: "ParsedEvents",
-						schema: PARSED_EVENTS_RESPONSE_SCHEMA,
-					},
-				}
-			);
+                        const {
+                                rawJson: eventsJsonStr,
+                                parsedJson: parsedEventsPayload,
+                        } = await retryAsyncFunction(
+                                generateAndParseJson,
+                                RETRY_COUNT,
+                                PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
+                                {
+                                        responseSchema: {
+                                                name: "ParsedEvents",
+                                                schema: PARSED_EVENTS_RESPONSE_SCHEMA,
+                                        },
+                                        preferenceOrder:
+                                                LLM_TASK_PREFERENCES.PARSE_EVENTS.ORDERED,
+                                }
+                        );
 
 			saveAsText(eventsJsonStr, getFilePath("tmp", `json_${index}`, "txt"));
 
@@ -193,15 +195,17 @@ export async function main() {
 			},
 			RETRY_COUNT,
 			JSON.stringify(allTitles),
-			{
-				systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
-				responseSchema: {
-					name: "UniqueEvents",
-					schema: UNIQUE_EVENT_TITLES_RESPONSE_SCHEMA,
-				},
-				// temperature: 0,
-			}
-		);
+                        {
+                                systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
+                                responseSchema: {
+                                        name: "UniqueEvents",
+                                        schema: UNIQUE_EVENT_TITLES_RESPONSE_SCHEMA,
+                                },
+                                preferenceOrder:
+                                        LLM_TASK_PREFERENCES.UNIQUE_EVENTS.ORDERED,
+                                // temperature: 0,
+                        }
+                );
 
 		allUniqueTitles_jsonString = rawJson;
 		allUniqueTitles = Array.isArray(uniqueEventsSummary?.uniqueEvents)
@@ -225,7 +229,8 @@ export async function main() {
 		uniqueEventsData_jsonString = JSON.stringify({ events: [] });
 	} else {
 		logger.info("Stage: Collating data for each unique event");
-		const isGeminiPrimary = LLM_PREFERENCES.PRIMARY?.PROVIDER === "gemini";
+                const consolidationPreferences = LLM_TASK_PREFERENCES.CONSOLIDATE_EVENTS;
+                const isGeminiPrimary = consolidationPreferences.PRIMARY?.PROVIDER === "gemini";
 		const useStructuredSchema = true;
 		const allowGeminiTools = isGeminiPrimary && !useStructuredSchema;
 		const toolGuidance = allowGeminiTools
@@ -238,20 +243,21 @@ export async function main() {
 			generateAndParseJson,
 			RETRY_COUNT,
 			eventsData_combinedJsonString,
-			{
-				systemMessage:
-					PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
-						"{uniqueEvents}",
-						`- ${allUniqueTitles.join("\n- ")}`
-					).replace("{TOOL_GUIDANCE}", toolGuidance),
-				tools:
-					allowGeminiTools ? [{ google_search: {} }] : undefined,
-				responseSchema: {
-					name: "ConsolidatedEvents",
-					schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
-				},
-			}
-		);
+                        {
+                                systemMessage:
+                                        PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
+                                                "{uniqueEvents}",
+                                                `- ${allUniqueTitles.join("\n- ")}`
+                                        ).replace("{TOOL_GUIDANCE}", toolGuidance),
+                                tools:
+                                        allowGeminiTools ? [{ google_search: {} }] : undefined,
+                                responseSchema: {
+                                        name: "ConsolidatedEvents",
+                                        schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
+                                },
+                                preferenceOrder: consolidationPreferences.ORDERED,
+                        }
+                );
 
 		uniqueEventsData_jsonString = rawJson;
 		uniqueEventsData = Array.isArray(uniqueEventsPayload?.events)
@@ -281,22 +287,24 @@ export async function main() {
 		}
 
 			for (let attempt = 0; attempt < retryCount; attempt++) {
-				const { parsedJson: response_dateRange } = await retryAsyncFunction(
-					generateAndParseJson,
-					RETRY_COUNT,
-					JSON.stringify([datetime]),
-					{
-						systemMessage:
-							PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
-								"{todayDate}",
-								formatDate()
-							),
-						responseSchema: {
-							name: "DateRanges",
-							schema: DATE_RANGES_RESPONSE_SCHEMA,
-						},
-					}
-				);
+                                const { parsedJson: response_dateRange } = await retryAsyncFunction(
+                                        generateAndParseJson,
+                                        RETRY_COUNT,
+                                        JSON.stringify([datetime]),
+                                        {
+                                                systemMessage:
+                                                        PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
+                                                                "{todayDate}",
+                                                                formatDate()
+                                                        ),
+                                                responseSchema: {
+                                                        name: "DateRanges",
+                                                        schema: DATE_RANGES_RESPONSE_SCHEMA,
+                                                },
+                                                preferenceOrder:
+                                                        LLM_TASK_PREFERENCES.DATE_RANGES.ORDERED,
+                                        }
+                                );
 				const dateRanges = Array.isArray(response_dateRange?.dateRanges)
 					? response_dateRange.dateRanges
 					: [];
