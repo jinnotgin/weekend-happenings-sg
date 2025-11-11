@@ -30,6 +30,7 @@ import {
 	getSearchResultsUrls,
 	getWebLinkAndSaveImage,
 } from "#lib/google-search.js";
+import { selectBestEventImage } from "#lib/image-selection.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
 
@@ -349,21 +350,51 @@ export async function main() {
 			const { title = "", location = "", datetime = "" } = item;
 			try {
 				const searchQuery = `"${title} singapore`;
-				logger.info(`Getting link and thumbnail for ${title}`);
+				logger.info(`Getting link and thumbnails for ${title}`);
 
-				const { firstWebUrl, savedImageFileName } = await retryAsyncFunction(
+				const { firstWebUrl, savedImages = [] } = await retryAsyncFunction(
 					getWebLinkAndSaveImage,
 					RETRY_COUNT,
 					searchQuery
 				);
 
-				logger.info(`Found the following for ${title}`, {
+				logger.info(`Retrieved link and ${savedImages.length} image candidates for ${title}`, {
 					firstWebUrl,
-					savedImageFileName,
 				});
 
+				let selectedThumbnail = savedImages?.[0]?.filename ?? null;
+				let selectionMetadata = null;
+
+				if (Array.isArray(savedImages) && savedImages.length > 0) {
+					selectionMetadata = await selectBestEventImage({
+						eventTitle: title,
+						eventDescription: item?.description ?? "",
+						savedImages,
+					});
+
+					if (
+						selectionMetadata?.bestImageIndex &&
+						savedImages[selectionMetadata.bestImageIndex - 1]
+					) {
+						selectedThumbnail =
+							savedImages[selectionMetadata.bestImageIndex - 1].filename;
+					}
+				}
+
 				item.link = firstWebUrl;
-				item.thumbnail = savedImageFileName;
+				item.thumbnail = selectedThumbnail;
+
+				if (selectionMetadata) {
+					logger.info(`Thumbnail selected for ${title}`, {
+						selectedThumbnail,
+						bestImageIndex: selectionMetadata.bestImageIndex,
+						justification: selectionMetadata.justification,
+						provider: selectionMetadata.provider,
+						model: selectionMetadata.model,
+					});
+				} else {
+					logger.warn(`Falling back to first available thumbnail for ${title}`);
+				}
 			} catch (error) {
 				logger.error(
 					`Unable to fetch link / image for ${title}: ${error.message}`
