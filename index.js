@@ -8,9 +8,9 @@ import {
 	SCRAPER_OPTIONS,
 	SEARCH_TERM_FOR_EVENTS,
 	BLACKLISTED_DOMAINS,
-        PROMPT_TEMPLATES,
-        RETRY_COUNT,
-        LLM_TASK_PREFERENCES,
+	PROMPT_TEMPLATES,
+	RETRY_COUNT,
+	LLM_TASK_PREFERENCES,
 } from "#lib/constants.js";
 import { scrapeUrlForTextTags } from "#lib/crawler.js";
 import {
@@ -148,22 +148,22 @@ export async function main() {
 			saveAsText(data, getFilePath("tmp", `raw_${index}`, "txt"));
 
 			logger.info(`Extracting events data as JSON for ${url}`);
-                        const {
-                                rawJson: eventsJsonStr,
-                                parsedJson: parsedEventsPayload,
-                        } = await retryAsyncFunction(
-                                generateAndParseJson,
-                                RETRY_COUNT,
-                                PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
-                                {
-                                        responseSchema: {
-                                                name: "ParsedEvents",
-                                                schema: PARSED_EVENTS_RESPONSE_SCHEMA,
-                                        },
-                                        preferenceOrder:
-                                                LLM_TASK_PREFERENCES.PARSE_EVENTS.ORDERED,
-                                }
-                        );
+			const {
+				rawJson: eventsJsonStr,
+				parsedJson: parsedEventsPayload,
+			} = await retryAsyncFunction(
+				generateAndParseJson,
+				RETRY_COUNT,
+				PROMPT_TEMPLATES.PARSE_EVENTS_AS_JSON.replace("{content}", data), // TODO: move to system message
+				{
+					responseSchema: {
+						name: "ParsedEvents",
+						schema: PARSED_EVENTS_RESPONSE_SCHEMA,
+					},
+					preferenceOrder:
+						LLM_TASK_PREFERENCES.PARSE_EVENTS.ORDERED,
+				}
+			);
 
 			saveAsText(eventsJsonStr, getFilePath("tmp", `json_${index}`, "txt"));
 
@@ -190,19 +190,32 @@ export async function main() {
 		getFilePath("compiled", `sources`, "json")
 	);
 
-	const allTitles = Object.values(eventsData)
+	const dedupeCandidates = Object.values(eventsData)
 		.flat()
-		.map((item) => item?.title)
+		.map((item) => {
+			const title = typeof item?.title === "string" ? item.title.trim() : "";
+			if (!title) {
+				return null;
+			}
+			const hasDescription = typeof item?.description === "string";
+			const description = hasDescription ? item.description.trim() : "";
+			return {
+				title,
+				description: description.length > 0 ? description : null,
+			};
+		})
 		.filter(Boolean);
 
-	let allUniqueTitles = [];
-	let allUniqueTitles_jsonString = "";
+	let uniqueEventSummaries = [];
+	let uniqueEventSummaries_jsonString = "";
 
-	if (allTitles.length === 0) {
-		logger.warn("No event titles extracted; skipping unique title generation");
-		allUniqueTitles_jsonString = JSON.stringify({ uniqueEvents: [] });
+	if (dedupeCandidates.length === 0) {
+		logger.warn(
+			"No event candidates extracted; skipping unique event generation stage"
+		);
+		uniqueEventSummaries_jsonString = JSON.stringify({ uniqueEvents: [] });
 	} else {
-		logger.info("Stage: Generating unique event titles");
+		logger.info("Stage: Generating unique event summaries");
 		const {
 			rawJson,
 			parsedJson: uniqueEventsSummary,
@@ -210,7 +223,14 @@ export async function main() {
 			async (...args) => {
 				const result = await generateAndParseJson(...args);
 				const uniqueEvents = result?.parsedJson?.uniqueEvents;
-				if (!Array.isArray(uniqueEvents)) {
+				const hasValidShape = Array.isArray(uniqueEvents)
+					? uniqueEvents.every((event) =>
+						event &&
+						typeof event.title === "string" &&
+						(typeof event.description === "string" || event.description === null)
+					)
+					: false;
+				if (!hasValidShape) {
 					logger.warn("Unique events payload invalid", {
 						parsedJsonType: typeof result?.parsedJson,
 						rawJsonPreview: result?.rawJson?.slice(0, 200),
@@ -220,48 +240,57 @@ export async function main() {
 				return result;
 			},
 			RETRY_COUNT,
-			JSON.stringify(allTitles),
-                        {
-                                systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
-                                responseSchema: {
-                                        name: "UniqueEvents",
-                                        schema: UNIQUE_EVENT_TITLES_RESPONSE_SCHEMA,
-                                },
-                                preferenceOrder:
-                                        LLM_TASK_PREFERENCES.UNIQUE_EVENTS.ORDERED,
-                                // temperature: 0,
-                        }
-                );
+			JSON.stringify(dedupeCandidates),
+			{
+				systemMessage: PROMPT_TEMPLATES.GET_UNIQUE_EVENTS_SYSTEM_MESSAGE,
+				responseSchema: {
+					name: "UniqueEvents",
+					schema: UNIQUE_EVENT_TITLES_RESPONSE_SCHEMA,
+				},
+				preferenceOrder:
+					LLM_TASK_PREFERENCES.UNIQUE_EVENTS.ORDERED,
+				// temperature: 0,
+			}
+		);
 
-		allUniqueTitles_jsonString = rawJson;
-		allUniqueTitles = Array.isArray(uniqueEventsSummary?.uniqueEvents)
+		uniqueEventSummaries_jsonString = rawJson;
+		uniqueEventSummaries = Array.isArray(uniqueEventsSummary?.uniqueEvents)
 			? uniqueEventsSummary.uniqueEvents
 			: [];
 
-		logger.info(`A total of ${allUniqueTitles.length} unique events found.`, {
-			allUniqueTitles,
-		});
+		logger.info(
+			`A total of ${uniqueEventSummaries.length} unique events found.`,
+			{
+				uniqueEventSummaries,
+			}
+		);
 	}
 	saveAsText(
-		allUniqueTitles_jsonString,
+		uniqueEventSummaries_jsonString,
 		getFilePath("tmp", `unique_events`, "json")
 	);
 
 	let uniqueEventsData = [];
 	let uniqueEventsData_jsonString = "";
 
-	if (allUniqueTitles.length === 0) {
-		logger.warn("No unique event titles available; skipping consolidation stage");
+	if (uniqueEventSummaries.length === 0) {
+		logger.warn("No unique event summaries available; skipping consolidation stage");
 		uniqueEventsData_jsonString = JSON.stringify({ events: [] });
 	} else {
 		logger.info("Stage: Collating data for each unique event");
-                const consolidationPreferences = LLM_TASK_PREFERENCES.CONSOLIDATE_EVENTS;
-                const isGeminiPrimary = consolidationPreferences.PRIMARY?.PROVIDER === "gemini";
+		const consolidationPreferences = LLM_TASK_PREFERENCES.CONSOLIDATE_EVENTS;
+		const isGeminiPrimary = consolidationPreferences.PRIMARY?.PROVIDER === "gemini";
 		const useStructuredSchema = true;
 		const allowGeminiTools = isGeminiPrimary && !useStructuredSchema;
 		const toolGuidance = allowGeminiTools
 			? "If you cannot confirm a field (especially datetime) from the provided data, use the available Google Search tool to look up authoritative sources, and attempt to resolve the missing information."
 			: "";
+		const formatUniqueEventsForPrompt = () => {
+			return uniqueEventSummaries
+				.map(({ title }) => `- ${title}`)
+				.join("\n");
+		};
+
 		const {
 			rawJson,
 			parsedJson: uniqueEventsPayload,
@@ -269,21 +298,21 @@ export async function main() {
 			generateAndParseJson,
 			RETRY_COUNT,
 			eventsData_combinedJsonString,
-                        {
-                                systemMessage:
-                                        PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
-                                                "{uniqueEvents}",
-                                                `- ${allUniqueTitles.join("\n- ")}`
-                                        ).replace("{TOOL_GUIDANCE}", toolGuidance),
-                                tools:
-                                        allowGeminiTools ? [{ google_search: {} }] : undefined,
-                                responseSchema: {
-                                        name: "ConsolidatedEvents",
-                                        schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
-                                },
-                                preferenceOrder: consolidationPreferences.ORDERED,
-                        }
-                );
+			{
+				systemMessage:
+					PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
+						"{uniqueEvents}",
+						formatUniqueEventsForPrompt()
+					).replace("{TOOL_GUIDANCE}", toolGuidance),
+				tools:
+					allowGeminiTools ? [{ google_search: {} }] : undefined,
+				responseSchema: {
+					name: "ConsolidatedEvents",
+					schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
+				},
+				preferenceOrder: consolidationPreferences.ORDERED,
+			}
+		);
 
 		uniqueEventsData_jsonString = rawJson;
 		uniqueEventsData = Array.isArray(uniqueEventsPayload?.events)
@@ -304,33 +333,33 @@ export async function main() {
 					.getDate()
 					.toString()
 					.padStart(2, "0")} ${date.toLocaleString("default", {
-				month: "short",
-			})} ${date.getFullYear()}`;
-		}
+						month: "short",
+					})} ${date.getFullYear()}`;
+			}
 
-		function isValidDateRange(dateRange) {
-			return Array.isArray(dateRange) && dateRange.length === 2;
-		}
+			function isValidDateRange(dateRange) {
+				return Array.isArray(dateRange) && dateRange.length === 2;
+			}
 
 			for (let attempt = 0; attempt < retryCount; attempt++) {
-                                const { parsedJson: response_dateRange } = await retryAsyncFunction(
-                                        generateAndParseJson,
-                                        RETRY_COUNT,
-                                        JSON.stringify([datetime]),
-                                        {
-                                                systemMessage:
-                                                        PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
-                                                                "{todayDate}",
-                                                                formatDate()
-                                                        ),
-                                                responseSchema: {
-                                                        name: "DateRanges",
-                                                        schema: DATE_RANGES_RESPONSE_SCHEMA,
-                                                },
-                                                preferenceOrder:
-                                                        LLM_TASK_PREFERENCES.DATE_RANGES.ORDERED,
-                                        }
-                                );
+				const { parsedJson: response_dateRange } = await retryAsyncFunction(
+					generateAndParseJson,
+					RETRY_COUNT,
+					JSON.stringify([datetime]),
+					{
+						systemMessage:
+							PROMPT_TEMPLATES.FORMAT_DATE_RANGE_SYSTEM_MESSAGE.replace(
+								"{todayDate}",
+								formatDate()
+							),
+						responseSchema: {
+							name: "DateRanges",
+							schema: DATE_RANGES_RESPONSE_SCHEMA,
+						},
+						preferenceOrder:
+							LLM_TASK_PREFERENCES.DATE_RANGES.ORDERED,
+					}
+				);
 				const dateRanges = Array.isArray(response_dateRange?.dateRanges)
 					? response_dateRange.dateRanges
 					: [];
@@ -341,8 +370,7 @@ export async function main() {
 				}
 
 				logger.warn(
-					`Attempt ${
-						attempt + 1
+					`Attempt ${attempt + 1
 					}: Received null daterange for datetime: ${datetime}. Retrying...`
 				);
 			}
