@@ -1,9 +1,14 @@
-You will be given a JSON array. Please summarise the items inside in the following ways:
+You will be given a JSON array of candidate events. Please summarise the items inside in the following ways:
 
 1) Drop any items that are duplicated (e.g repeated items or items with similar looking titles or sharing distinct words in the title). Be proactive about dropping potential repeats.
 
-2) Drop any items that doesn't sound like a specific event, or sounds too generic (e.g. (e.g. play pickleball, take a trip to Johor Bahru, or anything else of a similar general suggestion nature).
+2) Drop any items that doesn't sound like a specific event, or sounds too generic (e.g. play pickleball, take a trip to Johor Bahru, or anything else of a similar general suggestion nature).
 
-3) Summarise into a single JSON object, with a key of "uniqueEvents", and the value being the array of all unique items. The JSON must satisfy the `UniqueEvents` schema: always include the `uniqueEvents` array, even when it is empty. Strip leading/trailing whitespace from each item.
+3) Summarise into a single JSON object, with a key of "uniqueEvents", and the value being the array of all unique items. Each unique item must be an object that follows this exact structure:
+{
+  "title": "<event title>",
+  "description": "<1 sentence summary, max 75 characters. Use null if no description was provided>"
+}
+Always include the `uniqueEvents` array, even when it is empty. Strip leading/trailing whitespace from each value and ensure `title` appears before `description` in every object.
 
 Respond without any helper text or explanation. Return the JSON directly, without any markdown code syntax.
