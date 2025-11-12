@@ -36,6 +36,7 @@ import { selectBestEventImage } from "#lib/image-selection.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
 const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
+const UNIQUE_EVENT_BATCH_SIZE = 30;
 
 async function persistCandidateThumbnail(savedImage) {
 	if (!savedImage?.filename) {
@@ -58,6 +59,24 @@ async function persistCandidateThumbnail(savedImage) {
 	return savedImage.filename;
 }
 
+function chunkArray(array, size) {
+	if (!Array.isArray(array) || size <= 0) {
+		return [];
+	}
+
+	const chunks = [];
+	for (let index = 0; index < array.length; index += size) {
+		chunks.push(array.slice(index, index + size));
+	}
+
+	return chunks;
+}
+
+function formatUniqueEventsForPrompt(events = []) {
+	return events
+		.map(({ title }) => `- ${title}`)
+		.join("\n");
+}
 
 function formatMonthYear(date) {
 	return `${date.toLocaleString("en-US", { month: "short" })} ${date.getFullYear()}`;
@@ -167,12 +186,23 @@ export async function main() {
 
 			saveAsText(eventsJsonStr, getFilePath("tmp", `json_${index}`, "txt"));
 
+			let minifiedEventsJsonStr = eventsJsonStr;
+			try {
+				const parsedEventsJson = JSON.parse(eventsJsonStr);
+				minifiedEventsJsonStr = JSON.stringify(parsedEventsJson);
+			} catch (error) {
+				logger.warn("Unable to minify parsed events JSON; using original output", {
+					errorMessage: error?.message,
+					sourceIndex: index,
+				});
+			}
+
 			const parsedEvents = Array.isArray(parsedEventsPayload?.events)
 				? parsedEventsPayload.events
 				: [];
 
 			eventsData[url] = parsedEvents;
-			eventsData_combinedJsonString += `Source: ${index}\n${eventsJsonStr}\n===\n`;
+			eventsData_combinedJsonString += `Source: ${index}\n${minifiedEventsJsonStr}\n===\n`;
 		} catch (error) {
 			scrapeFailures += 1;
 			logger.error(`Error occured when scraping ${url}`, {
@@ -285,39 +315,69 @@ export async function main() {
 		const toolGuidance = allowGeminiTools
 			? "If you cannot confirm a field (especially datetime) from the provided data, use the available Google Search tool to look up authoritative sources, and attempt to resolve the missing information."
 			: "";
-		const formatUniqueEventsForPrompt = () => {
-			return uniqueEventSummaries
-				.map(({ title }) => `- ${title}`)
-				.join("\n");
-		};
-
-		const {
-			rawJson,
-			parsedJson: uniqueEventsPayload,
-		} = await retryAsyncFunction(
-			generateAndParseJson,
-			RETRY_COUNT,
-			eventsData_combinedJsonString,
-			{
-				systemMessage:
-					PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
-						"{uniqueEvents}",
-						formatUniqueEventsForPrompt()
-					).replace("{TOOL_GUIDANCE}", toolGuidance),
-				tools:
-					allowGeminiTools ? [{ google_search: {} }] : undefined,
-				responseSchema: {
-					name: "ConsolidatedEvents",
-					schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
-				},
-				preferenceOrder: consolidationPreferences.ORDERED,
-			}
+		const uniqueEventsBatches = chunkArray(
+			uniqueEventSummaries,
+			UNIQUE_EVENT_BATCH_SIZE
 		);
+		const batchRawResponses = [];
+		const consolidatedEvents = [];
 
-		uniqueEventsData_jsonString = rawJson;
-		uniqueEventsData = Array.isArray(uniqueEventsPayload?.events)
-			? uniqueEventsPayload.events
-			: [];
+		for (let batchIndex = 0; batchIndex < uniqueEventsBatches.length; batchIndex++) {
+			const batchSummaries = uniqueEventsBatches[batchIndex];
+			logger.info(
+				`Stage: Collating data for unique event batch ${batchIndex + 1}/${uniqueEventsBatches.length}`,
+				{ batchSize: batchSummaries.length }
+			);
+
+			const {
+				rawJson,
+				parsedJson: uniqueEventsPayload,
+			} = await retryAsyncFunction(
+				generateAndParseJson,
+				RETRY_COUNT,
+				eventsData_combinedJsonString,
+				{
+					systemMessage:
+						PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
+							"{uniqueEvents}",
+							formatUniqueEventsForPrompt(batchSummaries)
+						).replace("{TOOL_GUIDANCE}", toolGuidance),
+					tools:
+						allowGeminiTools ? [{ google_search: {} }] : undefined,
+					responseSchema: {
+						name: "ConsolidatedEvents",
+						schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
+					},
+					preferenceOrder: consolidationPreferences.ORDERED,
+				}
+			);
+
+			const batchEvents = Array.isArray(uniqueEventsPayload?.events)
+				? uniqueEventsPayload.events
+				: [];
+
+			if (!batchEvents.length) {
+				logger.warn("No events returned from consolidation batch", {
+					batchIndex,
+					batchSize: batchSummaries.length,
+				});
+			}
+
+			batchRawResponses.push({
+				batchIndex,
+				batchSize: batchSummaries.length,
+				rawJson,
+			});
+			consolidatedEvents.push(...batchEvents);
+		}
+
+		logger.info("Unique event consolidation batches completed", {
+			totalBatches: uniqueEventsBatches.length,
+			totalEvents: consolidatedEvents.length,
+		});
+
+		uniqueEventsData_jsonString = JSON.stringify(batchRawResponses);
+		uniqueEventsData = consolidatedEvents;
 	}
 
 	saveAsText(
