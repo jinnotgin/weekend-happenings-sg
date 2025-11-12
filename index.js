@@ -1,4 +1,6 @@
 import "dotenv/config";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import logger from "#lib/logger.js";
 import {
@@ -32,6 +34,29 @@ import {
 } from "#lib/google-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
+
+const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
+
+async function persistCandidateThumbnail(savedImage) {
+	if (!savedImage?.filename) {
+		throw new Error("Candidate image is missing filename");
+	}
+
+	const sourcePath = savedImage.absolutePath;
+
+	if (!sourcePath) {
+		throw new Error("Unable to resolve source path for candidate image");
+	}
+
+	await fs.mkdir(COMPILED_IMAGE_DIR, { recursive: true });
+	const targetPath = path.join(COMPILED_IMAGE_DIR, savedImage.filename);
+
+	if (sourcePath !== targetPath) {
+		await fs.copyFile(sourcePath, targetPath);
+	}
+
+	return savedImage.filename;
+}
 
 
 function formatMonthYear(date) {
@@ -362,8 +387,9 @@ export async function main() {
 					firstWebUrl,
 				});
 
-				let selectedThumbnail = savedImages?.[0]?.filename ?? null;
 				let selectionMetadata = null;
+				let selectedImageIndex =
+					Array.isArray(savedImages) && savedImages.length > 0 ? 1 : null;
 
 				if (Array.isArray(savedImages) && savedImages.length > 0) {
 					selectionMetadata = await selectBestEventImage({
@@ -376,8 +402,31 @@ export async function main() {
 						selectionMetadata?.bestImageIndex &&
 						savedImages[selectionMetadata.bestImageIndex - 1]
 					) {
-						selectedThumbnail =
-							savedImages[selectionMetadata.bestImageIndex - 1].filename;
+						selectedImageIndex = selectionMetadata.bestImageIndex;
+					} else if (selectionMetadata?.bestImageIndex) {
+						logger.warn("Image selection returned out-of-range index; using fallback", {
+							requestedIndex: selectionMetadata.bestImageIndex,
+							candidateCount: savedImages.length,
+							eventTitle: title,
+						});
+						selectedImageIndex =
+							Array.isArray(savedImages) && savedImages.length > 0 ? 1 : null;
+					}
+				}
+
+				const selectedImage =
+					typeof selectedImageIndex === "number"
+						? savedImages[selectedImageIndex - 1] ?? null
+						: null;
+
+				let selectedThumbnail = null;
+				if (selectedImage) {
+					try {
+						selectedThumbnail = await persistCandidateThumbnail(selectedImage);
+					} catch (error) {
+						logger.error(`Unable to persist thumbnail for ${title}`, {
+							errorMessage: error?.message,
+						});
 					}
 				}
 
@@ -392,8 +441,15 @@ export async function main() {
 						provider: selectionMetadata.provider,
 						model: selectionMetadata.model,
 					});
+					if (!selectedThumbnail) {
+						logger.warn(`Unable to retain selected thumbnail for ${title}`);
+					}
 				} else {
-					logger.warn(`Falling back to first available thumbnail for ${title}`);
+					if (selectedThumbnail) {
+						logger.warn(`Falling back to first available thumbnail for ${title}`);
+					} else {
+						logger.warn(`No thumbnail available for ${title}`);
+					}
 				}
 			} catch (error) {
 				logger.error(

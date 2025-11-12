@@ -62,6 +62,9 @@ data/
     json_<n>.txt               # LLM parsed JSON per source
     unique_events.json
     unique_events_data.json
+  image-candidates/
+    <search slug>-<id>/
+      <image assets>.jpg|png   # per-event candidate pools (kept for review)
   compiled/
     events.json                # final consolidated payload
     sources.json               # URLs & titles scraped this run
@@ -73,6 +76,7 @@ logs/
 ```
 
 The `compiled/` folder is uploaded to Cloudflare R2 and mirrored to both `latest/` and an `archive-YYYYMMDD-HHMMSS/` folder. Older archives beyond the most recent 30 runs are automatically deleted.
+Candidate pools are staged separately under `data/image-candidates/` in per-search subfolders so you can review the raw downloads without uploading them.
 
 ## Customising behaviour
 Most knobs live in `lib/constants.js`:
