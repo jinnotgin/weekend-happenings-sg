@@ -85,7 +85,7 @@ Most knobs live in `lib/constants.js`:
 - `SEARCH_TERM_FOR_EVENTS` is expanded into several monthly/weekend search phrases.
 - `BLACKLISTED_DOMAINS` filters out noisy hosts before scraping.
 - `PROMPT_TEMPLATES` load markdown instructions from `lib/prompts/` for the parsing, deduping, consolidation, and date range stages. Tweak these to change LLM behaviour.
-- `LLM_TASK_PREFERENCES` configures provider/model priority per pipeline stage (e.g., `gemini-2.5-flash`/`gpt-5-mini` for parsing and date ranges, `gemini-2.5-pro`/`gpt-5` for deduping and consolidation). Adjust these if you prefer other models.
+- `LLM_TASK_PREFERENCES` configures provider/model priority per pipeline stage (e.g., `gemini-2.5-flash`/`gpt-5-mini` for events data parsing, `gemini-2.5-flash-lite`/`gpt-5-nano` for date ranges interpretation & thumbnail image selection, `gemini-2.5-pro`/`gpt-5` for deduping & consolidation). Adjust these if you prefer other models.
 - `EVENT_CATEGORY_GUIDANCE`, `REGION_GUIDANCE`, and MRT naming helpers are embedded into the prompts to encourage consistent metadata.
 
 The crawler itself is implemented in `lib/crawler.js` using `puppeteer-extra` with the stealth plugin and an HTTP fallback path for JSON APIs. Update that file if you need different scraping heuristics or headers.
