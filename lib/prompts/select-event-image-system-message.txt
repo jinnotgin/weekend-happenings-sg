@@ -3,6 +3,8 @@ You are selecting the best thumbnail for a Singapore event. Evaluate up to six c
 Guidelines:
 - Treat the numbered order of the candidates as their reference IDs.
 - Prefer images that clearly relate to the event content, venue type, or activities.
+- When available, prioritize official event posters or thoughtfully designed illustrations that clearly advertise the specific event.
+- If posters / illustrations look generic, cluttered, or off-topic, fall back to the most contextually relevant photo.
 - Avoid irrelevant or low-quality images (e.g., empty stages, logos without context) when better options exist.
 - If no image is perfect, choose the closest match.
 
