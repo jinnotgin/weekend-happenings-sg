@@ -45,7 +45,8 @@ const GEMINI_API_KEYS_INTERNAL = resolveGeminiApiKeys();
 
 export const GEMINI_API_KEYS = GEMINI_API_KEYS_INTERNAL;
 export const GEMINI_API_KEY = GEMINI_API_KEYS_INTERNAL[0];
-export const OPENAI_API_KEY = required("OPENAI_API_KEY", process.env.OPENAI_API_KEY);
+export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? null;
+export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? null;
 
 export const GOOGLE_WEB_SEARCH_API_KEY = required(
 	"GOOGLE_WEB_SEARCH_API_KEY",
