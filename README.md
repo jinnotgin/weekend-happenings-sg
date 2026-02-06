@@ -57,6 +57,21 @@ Create a `.env` in the repository root. `dotenv/config` loads it automatically.
 node start.js
 ```
 
+Resume from a specific phase:
+
+```bash
+node start.js --start-phase <phase>
+```
+
+Available phases:
+- `scrape` (default): full run from scratch, including clearing `data/`
+- `unique`: start from unique-event deduplication (expects `data/tmp/json_*.txt`)
+- `consolidate`: start from event consolidation (expects `data/tmp/unique_events.json`)
+- `enrich`: start from date/link/thumbnail enrichment (expects `data/tmp/unique_events_data.json`)
+- `compile`: write/upload compiled artifacts only (expects `data/compiled/events.json`)
+
+Use `node start.js --help` to print CLI usage.
+
 `start.js` wraps `main()` from `index.js` and logs any top-level failures via Winston. Successful runs produce:
 
 ```
