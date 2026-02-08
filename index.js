@@ -96,6 +96,7 @@ function generateSearchTerms(baseTerm) {
 
 export async function main() {
 	await clearDataDirectory();
+	logger.summary("Run started");
 	logger.info("Stage: Data directory cleared");
 
 	let eventsData_combinedJsonString = "";
@@ -212,6 +213,10 @@ export async function main() {
 		}
 	}
 	logger.info("Stage: Scraping sources completed", {
+		successfulSources: sources.length,
+		failedSources: scrapeFailures,
+	});
+	logger.summary("Stage: Scraping sources completed", {
 		successfulSources: sources.length,
 		failedSources: scrapeFailures,
 	});
@@ -572,6 +577,7 @@ export async function main() {
 			}
 		}, 2);
 		logger.info("Remote upload completed successfully.");
+		logger.summary("Remote upload completed successfully.");
 	} catch (error) {
 		logger.error(
 			"Unable to upload results to R2 after retries. Data remains available locally.",
@@ -579,5 +585,9 @@ export async function main() {
 		);
 	}
 
+	logger.summary("Run completed", {
+		uniqueEvents: uniqueEventsData.length,
+		scrapeFailures,
+	});
 	return true;
 }
