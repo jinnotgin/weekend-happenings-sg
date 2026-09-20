@@ -21,12 +21,16 @@ test("Gemini truncated output cannot pass as a successful JSON generation", asyn
 
 test("Gemini uses medium thinking only for dedupe and consolidation", async t => {
     let expected;
+    let expectedCap;
     t.mock.method(globalThis, "fetch", async (url, options) => {
-        assert.equal(JSON.parse(options.body).generationConfig.thinkingConfig.thinkingLevel, expected);
+        const config = JSON.parse(options.body).generationConfig;
+        assert.equal(config.thinkingConfig.thinkingLevel, expected);
+        assert.equal(config.maxOutputTokens, expectedCap);
         return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: '{"ok":true}' }] } }] });
     });
     for (const task of ["UNIQUE_EVENTS", "CONSOLIDATE_EVENTS", "PARSE_EVENTS", "LOCATION_ENRICHMENT", "IMAGE_SELECTION", "DATE_RANGES"]) {
         expected = ["UNIQUE_EVENTS", "CONSOLIDATE_EVENTS"].includes(task) ? "medium" : "low";
+        expectedCap = task === "CONSOLIDATE_EVENTS" ? 65536 : ["UNIQUE_EVENTS", "PARSE_EVENTS"].includes(task) ? 32768 : 16384;
         await generateJson("events", { task });
     }
 });

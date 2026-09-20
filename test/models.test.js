@@ -82,12 +82,20 @@ test("dates reject impossible, reversed and arbitrary text values", () => {
             else if (provider === "nim") assert.equal(request.chat_template_kwargs.enable_thinking, true);
             else if (model.includes("gpt-oss")) assert.equal(request.reasoning.effort, "medium");
             else assert.equal(request.reasoning.enabled, true);
-            assert.equal(request.max_completion_tokens ?? request.max_tokens, 16384);
+            assert.equal(request.max_completion_tokens ?? request.max_tokens, task === "CONSOLIDATE_EVENTS" ? 65536 : 32768);
         }
     }
     for (const task of ["PARSE_EVENTS", "DATE_RANGES", "IMAGE_SELECTION"]) {
         assert.equal(buildChatRequest("openai", "events", { task }).reasoning_effort, "none");
         assert.equal(buildChatRequest("nim", "events", { task }).chat_template_kwargs.enable_thinking, false);
         assert.equal(buildChatRequest("openrouter", "events", { task }).reasoning.enabled, false);
+    }
+});
+
+test("extraction shares the 32K output cap across chat providers", () => {
+    for (const { PROVIDER: provider, MODEL: model } of tasks.PARSE_EVENTS.ORDERED) {
+        if (provider === "gemini") continue;
+        const request = buildChatRequest(provider, "events", { task: "PARSE_EVENTS", model });
+        assert.equal(request.max_completion_tokens ?? request.max_tokens, 32768);
     }
 });

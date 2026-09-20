@@ -35,8 +35,13 @@ responses are rejected rather than recursively requesting/stitching continuation
 Deduplication and consolidation use medium reasoning for Luna and GPT-OSS,
 medium thinking for Gemini, and enabled thinking for Gemma (an on/off control,
 not a calibrated medium level). Other tasks keep Luna reasoning off, Gemma
-thinking disabled, GPT-OSS reasoning low, and Gemini thinking low. Responses are capped at 16,384 tokens
-by default (1,024 for dates/images, 2,048 for location enrichment).
+thinking disabled, GPT-OSS reasoning low, and Gemini thinking low. Extraction and deduplication are capped at 32,768 output tokens per request;
+consolidation at 65,536. These are the highest shared output limits within each
+task's fallback chain: Gemma free/NVIDIA limit extraction and deduplication to
+32K, while Gemini limits consolidation to 64K. Dates/images retain 1,024 and
+location enrichment 2,048. Reasoning tokens consume the generation budget where
+the provider counts them; these caps do not guarantee that much final JSON.
+Input plus generated tokens must also fit the selected model's context window.
 
 The OpenAI adapter retains Chat Completions and the existing SDK; it sends no
 function tools or unconditional sampling/penalty parameters. It uses native fetch
