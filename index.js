@@ -1,3 +1,8 @@
+import { getModelMetrics, resetModelMetrics } from "#lib/model-metrics.js";
+import { enrichLocations } from "#lib/location-enrichment.js";
+import { validateDateRange } from "#lib/validation.js";
+import { assertPublishable } from "#lib/publication.js";
+import { getSearchMetrics, resetSearchCache } from "#lib/brave-search.js";
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -31,11 +36,10 @@ import {
 import {
 	getSearchResultsUrls,
 	getWebLinkAndSaveImage,
-} from "#lib/google-search.js";
+} from "#lib/brave-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
-const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
 const UNIQUE_EVENT_BATCH_SIZE = 30;
 
 async function persistCandidateThumbnail(savedImage) {
@@ -49,6 +53,7 @@ async function persistCandidateThumbnail(savedImage) {
 		throw new Error("Unable to resolve source path for candidate image");
 	}
 
+	const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
 	await fs.mkdir(COMPILED_IMAGE_DIR, { recursive: true });
 	const targetPath = path.join(COMPILED_IMAGE_DIR, savedImage.filename);
 
@@ -94,7 +99,12 @@ function generateSearchTerms(baseTerm) {
 	];
 }
 
-export async function main() {
+const DEFAULT_SERVICES = { scrapeUrlForTextTags, generateAndParseJson, getSearchResultsUrls, getWebLinkAndSaveImage, selectBestEventImage, enrichLocations, uploadAndUpdateLatest };
+export async function main({ mode = process.env.PUBLISH_MODE || "dry-run", services = {} } = {}) {
+    const { scrapeUrlForTextTags, generateAndParseJson, getSearchResultsUrls, getWebLinkAndSaveImage, selectBestEventImage, enrichLocations, uploadAndUpdateLatest } = { ...DEFAULT_SERVICES, ...services };
+	if (!["dry-run", "staging", "production"].includes(mode)) throw new Error("Invalid PUBLISH_MODE");
+	resetSearchCache();
+    resetModelMetrics();
 	await clearDataDirectory();
 	logger.summary("Run started");
 	logger.info("Stage: Data directory cleared");
@@ -110,7 +120,7 @@ export async function main() {
 	let searchResultUrls = [];
 
 	if (shouldPerformWebSearch) {
-		const NUMBER_OF_SEARCH_PAGE_RESULTS = 2;
+		const NUMBER_OF_SEARCH_PAGE_RESULTS = 1;
 		logger.info("Stage: Generating search terms");
 		searchTerms = generateSearchTerms(SEARCH_TERM_FOR_EVENTS);
 		logger.info("Search terms in use", { searchTerms });
@@ -164,7 +174,6 @@ export async function main() {
 			);
 			if (!data) throw new Error("No data available.");
 
-			sources.push({ title, url });
 			saveAsText(data, getFilePath("tmp", `raw_${index}`, "txt"));
 
 			logger.info(`Extracting events data as JSON for ${url}`);
@@ -180,8 +189,8 @@ export async function main() {
 						name: "ParsedEvents",
 						schema: PARSED_EVENTS_RESPONSE_SCHEMA,
 					},
-					preferenceOrder:
-						LLM_TASK_PREFERENCES.PARSE_EVENTS.ORDERED,
+					task: "PARSE_EVENTS",
+                    preferenceOrder: LLM_TASK_PREFERENCES.PARSE_EVENTS.ORDERED,
 				}
 			);
 
@@ -189,7 +198,7 @@ export async function main() {
 
 			let minifiedEventsJsonStr = eventsJsonStr;
 			try {
-				const parsedEventsJson = JSON.parse(eventsJsonStr);
+				const parsedEventsJson = parsedEventsPayload;
 				minifiedEventsJsonStr = JSON.stringify(parsedEventsJson);
 			} catch (error) {
 				logger.warn("Unable to minify parsed events JSON; using original output", {
@@ -202,8 +211,10 @@ export async function main() {
 				? parsedEventsPayload.events
 				: [];
 
+			const sourceIndex = sources.length;
+			sources.push({ title, url });
 			eventsData[url] = parsedEvents;
-			eventsData_combinedJsonString += `Source: ${index}\n${minifiedEventsJsonStr}\n===\n`;
+			eventsData_combinedJsonString += `Source: ${sourceIndex}\n${minifiedEventsJsonStr}\n===\n`;
 		} catch (error) {
 			scrapeFailures += 1;
 			logger.error(`Error occured when scraping ${url}`, {
@@ -282,8 +293,8 @@ export async function main() {
 					name: "UniqueEvents",
 					schema: UNIQUE_EVENT_TITLES_RESPONSE_SCHEMA,
 				},
-				preferenceOrder:
-					LLM_TASK_PREFERENCES.UNIQUE_EVENTS.ORDERED,
+				task: "UNIQUE_EVENTS",
+                preferenceOrder: LLM_TASK_PREFERENCES.UNIQUE_EVENTS.ORDERED,
 				// temperature: 0,
 			}
 		);
@@ -314,12 +325,6 @@ export async function main() {
 	} else {
 		logger.info("Stage: Collating data for each unique event");
 		const consolidationPreferences = LLM_TASK_PREFERENCES.CONSOLIDATE_EVENTS;
-		const isGeminiPrimary = consolidationPreferences.PRIMARY?.PROVIDER === "gemini";
-		const useStructuredSchema = true;
-		const allowGeminiTools = isGeminiPrimary && !useStructuredSchema;
-		const toolGuidance = allowGeminiTools
-			? "If you cannot confirm a field (especially datetime) from the provided data, use the available Google Search tool to look up authoritative sources, and attempt to resolve the missing information."
-			: "";
 		const uniqueEventsBatches = chunkArray(
 			uniqueEventSummaries,
 			UNIQUE_EVENT_BATCH_SIZE
@@ -346,14 +351,18 @@ export async function main() {
 						PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
 							"{uniqueEvents}",
 							formatUniqueEventsForPrompt(batchSummaries)
-						).replace("{TOOL_GUIDANCE}", toolGuidance),
-					tools:
-						allowGeminiTools ? [{ google_search: {} }] : undefined,
+						).replace("{TOOL_GUIDANCE}", ""),
 					responseSchema: {
 						name: "ConsolidatedEvents",
 						schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
 					},
-					preferenceOrder: consolidationPreferences.ORDERED,
+					task: "CONSOLIDATE_EVENTS",
+                    preferenceOrder: consolidationPreferences.ORDERED,
+                    validateResult: payload => {
+                        for (const event of payload.events) {
+                            if (event.source.some(index => index >= sources.length)) throw new Error("Invalid event source index");
+                        }
+                    },
 				}
 			);
 
@@ -391,6 +400,8 @@ export async function main() {
 	);
 
 	if (uniqueEventsData.length > 0) {
+		logger.info("Stage: Enriching venue locations with Gemini");
+		await enrichLocations(uniqueEventsData);
 		logger.info("Stage: Generating structured datetimes");
 		async function processDateRange(datetime, retryCount = 3) {
 			function formatDate(date = new Date()) {
@@ -403,7 +414,7 @@ export async function main() {
 			}
 
 			function isValidDateRange(dateRange) {
-				return Array.isArray(dateRange) && dateRange.length === 2;
+				try { validateDateRange(dateRange); return true; } catch { return false; }
 			}
 
 			for (let attempt = 0; attempt < retryCount; attempt++) {
@@ -421,8 +432,13 @@ export async function main() {
 							name: "DateRanges",
 							schema: DATE_RANGES_RESPONSE_SCHEMA,
 						},
-						preferenceOrder:
-							LLM_TASK_PREFERENCES.DATE_RANGES.ORDERED,
+						task: "DATE_RANGES",
+                        maxOutputTokens: 1024,
+                        validateResult: payload => {
+                            if (payload.dateRanges.length !== 1) throw new Error("Expected one date range");
+                            validateDateRange(payload.dateRanges[0]);
+                        },
+                        preferenceOrder: LLM_TASK_PREFERENCES.DATE_RANGES.ORDERED,
 					}
 				);
 				const dateRanges = Array.isArray(response_dateRange?.dateRanges)
@@ -457,7 +473,7 @@ export async function main() {
 					error
 				);
 				// You might want to set a default value or flag here
-				item.daterange = "Error: Unable to process";
+				item.daterange = [null, null];
 			}
 		}
 
@@ -465,15 +481,18 @@ export async function main() {
 
 		logger.info("Stage: Resolving event links and thumbnails");
 		for (let item of uniqueEventsData) {
-			const { title = "", location = "", datetime = "" } = item;
+			const { title = "", datetime = "" } = item;
+            item.link = null;
+            item.thumbnail = null;
 			try {
-				const searchQuery = `"${title} singapore`;
+				const searchQuery = `"${title.replaceAll('"', "")}" Singapore`;
 				logger.info(`Getting link and thumbnails for ${title}`);
 
 				const { firstWebUrl, savedImages = [] } = await retryAsyncFunction(
 					getWebLinkAndSaveImage,
 					RETRY_COUNT,
-					searchQuery
+					searchQuery,
+                    { title, location: (item.locations ?? []).map(x => x.name).filter(Boolean).join(" "), datetime: datetime ?? "" }
 				);
 
 				logger.info(`Retrieved link and ${savedImages.length} image candidates for ${title}`, {
@@ -567,23 +586,14 @@ export async function main() {
 		getFilePath("compiled", `generationTime`, "json")
 	);
 
-	const compiledDir = getDirectoryPath("compiled");
-	try {
-		logger.info("Stage: Uploading compiled artifacts to R2");
-		await retryAsyncFunction(async () => {
-			const success = await uploadAndUpdateLatest(compiledDir);
-			if (!success) {
-				throw new Error("Upload to R2 reported failure.");
-			}
-		}, 2);
-		logger.info("Remote upload completed successfully.");
-		logger.summary("Remote upload completed successfully.");
-	} catch (error) {
-		logger.error(
-			"Unable to upload results to R2 after retries. Data remains available locally.",
-			{ errorMessage: error?.message }
-		);
-	}
+    const quality = { events: uniqueEventsData, sourceCount: sources.length, attemptedSources: urlsToScrape.length };
+    assertPublishable(quality);
+    saveAsText(JSON.stringify({ ...getSearchMetrics(), ...getModelMetrics(), eventCount: uniqueEventsData.length, sourceCount: sources.length, attemptedSources: urlsToScrape.length, mode }), getFilePath("tmp", "run-summary", "json"));
+    if (mode !== "dry-run") {
+        await uploadAndUpdateLatest(getDirectoryPath("compiled"), { mode, sourceCount: sources.length, attemptedSources: urlsToScrape.length });
+    } else {
+        logger.summary("Dry run validated; publication skipped");
+    }
 
 	logger.summary("Run completed", {
 		uniqueEvents: uniqueEventsData.length,
@@ -591,3 +601,4 @@ export async function main() {
 	});
 	return true;
 }
+

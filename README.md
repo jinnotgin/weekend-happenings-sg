@@ -1,101 +1,166 @@
 # weekend-happenings-sg
 
-End-to-end pipeline for discovering Singapore events, normalising them with LLMs, enriching each event with search metadata, and publishing the results to Cloudflare R2.
+Batch pipeline for discovering Singapore events, extracting structured records,
+resolving venue details, selecting thumbnails, and publishing JSON/images to R2.
 
-## Pipeline overview
-- Reset the `data/` workspace at the start of every run.
-- Build a URL queue by merging fixed sources with Google Custom Search results (optional) and filtering out blacklisted domains.
-- Scrape each URL with Puppeteer (with robust retries and HTTP fallbacks) and persist the raw text snapshots under `data/tmp/`.
-- Use Gemini (with OpenAI fallback) to extract structured event JSON, deduplicate titles, and consolidate unique events via prompt templates in `lib/prompts/`.
-- Generate human-friendly date ranges from the LLM datetime values.
-- Resolve canonical links and thumbnails for each event using Google Custom Search, saving images alongside compiled JSON.
-- Write the compiled payload to `data/compiled/`, then push both a `latest/` copy and a timestamped archive to the configured Cloudflare R2 bucket (old archives are pruned beyond the most recent 30 runs).
-- Stream JSON logs to the console and rotate them to `logs/combined.log` and `logs/error.log`.
+## Model routing
 
-## Requirements
-- Node.js 20+ (for `fetch`, top-level await, and current Puppeteer releases)
-- npm 9+ (bundled with Node 20)
-- API access:
-  - Google Gemini (REST API key; multiple keys supported for quota rotation)
-  - OpenAI API
-  - OpenRouter API
-  - NVIDIA NIM API (optional, for `nim` provider preferences)
-  - Google Custom Search API (key + CX/engine ID)
-  - Cloudflare R2 bucket with S3-compatible credentials
-  - Optional: Bing Search API (only if you reinstate the Bing helper)
+Each row is tried left to right. Errors, truncated responses, invalid JSON, and
+schema/semantic validation failures advance to the next route. Missing provider
+credentials fail that route, rather than crashing imports for all providers.
 
-## Installation
-```bash
-npm install
+| Task | Priority |
+| --- | --- |
+| Extract events | OpenRouter Gemma 4 free → NVIDIA Gemma 4 → GPT-5.6 Luna → OpenRouter GPT-OSS 120B Exacto → Gemini 3.8 Flash |
+| Deduplicate events | OpenRouter Gemma 4 free → NVIDIA Gemma 4 → GPT-5.6 Luna → OpenRouter GPT-OSS 120B Exacto → Gemini 3.8 Flash |
+| Consolidate records | GPT-5.6 Luna → OpenRouter GPT-OSS 120B Exacto → Gemini 3.8 Flash |
+| Normalize dates | OpenRouter Gemma 4 free → NVIDIA Gemma 4 → GPT-5.6 Luna → OpenRouter Gemma 4 paid |
+| Select thumbnails | OpenRouter Gemma 4 free → NVIDIA Gemma 4 → Gemini 3.8 Flash → OpenRouter Gemma 4 paid |
+| Enrich venue locations | Gemini 3.8 Flash only; unresolved fields remain null |
+
+Exact IDs: `google/gemma-4-31b-it:free` and `google/gemma-4-31b-it` on
+OpenRouter, `google/gemma-4-31b-it` on NVIDIA, `gpt-5.6-luna` on OpenAI,
+`openai/gpt-oss-120b:exacto` on OpenRouter, and `gemini-3.8-flash` on Google.
+NVIDIA's free endpoint is a trial/quota-based service; availability is not guaranteed.
+
+Extraction copies source venue names only. Consolidation merges those names and
+leaves geographic fields null. A separate Gemini step receives Brave evidence
+for each distinct venue and fills region/GPS/MRT only when supported. Maps search
+URLs are generated in code. No Google grounding tool is used.
+
+OpenRouter free uses JSON object mode; NIM Gemma is prompted with the schema
+without sending an undocumented `response_format`. Paid OpenRouter and OpenAI
+use JSON schemas. AJV checks the original schema locally for all routes. Truncated
+responses are rejected rather than recursively requesting/stitching continuations.
+Deduplication and consolidation use medium reasoning for Luna and GPT-OSS,
+medium thinking for Gemini, and enabled thinking for Gemma (an on/off control,
+not a calibrated medium level). Other tasks keep Luna reasoning off, Gemma
+thinking disabled, GPT-OSS reasoning low, and Gemini thinking low. Extraction and deduplication are capped at 32,768 output tokens per request;
+consolidation at 65,536. These are the highest shared output limits within each
+task's fallback chain: Gemma free/NVIDIA limit extraction and deduplication to
+32K, while Gemini limits consolidation to 64K. Dates/images retain 1,024 and
+location enrichment 2,048. Reasoning tokens consume the generation budget where
+the provider counts them; these caps do not guarantee that much final JSON.
+Input plus generated tokens must also fit the selected model's context window.
+
+The OpenAI adapter retains Chat Completions and the existing SDK; it sends no
+function tools or unconditional sampling/penalty parameters. It uses native fetch
+explicitly. Older model constants and archived clients remain as historical code,
+but are absent from active task routes.
+
+## Setup
+
+Use Node.js 22+ (Actions pins Node 24).
+
+```sh
+npm ci
+npx puppeteer browsers install chrome --install-deps
 ```
 
-If you deploy to Google Cloud Run/App Engine, run `npm run gcp-build` during the build step so Puppeteer can download Chromium once.
+Create `.env` with the variables from `.env.example`. Search discovery and event
+link/image/location enrichment now use Brave. No Google Custom Search credentials
+are needed for the active pipeline. For all fallback routes, configure all four
+model providers. A missing Gemini key leaves location enrichment null; missing
+all text providers prevents a useful run.
 
-## Environment configuration
-Create a `.env` in the repository root. `dotenv/config` loads it automatically.
+Brave plan selection must cover storage of the result metadata used in R2 and any
+persistent caching. API access does not grant rights to third-party images. This
+implementation only caches search responses in memory within a run. See
+[Brave's storage FAQ](https://brave.com/search/api/).
 
-| Variable | Required | Notes |
+## Run modes
+
+```sh
+npm start                         # dry-run: makes API calls, writes local results, no R2
+PUBLISH_MODE=staging npm start     # writes staging/latest and staging/archive-* in R2
+PUBLISH_MODE=production npm start  # writes latest and archive-* in R2
+npm test                          # offline, mocked provider/search/storage tests
+```
+
+The entry point uses `Asia/Singapore` time and a 300-minute runtime budget. The Actions job allows 330 minutes, leaving
+30 minutes for setup and artifact upload. The 20-minute LLM timeout applies to
+each request attempt; retries and fallback models share the overall run budget. Each
+run clears `data/`; do not put durable inputs there. API calls may incur charges
+in all three run modes. `PERFORM_WEB_SEARCH=false` skips discovery only; Brave is
+still used for enrichment.
+
+Pipeline stages:
+1. Merge fixed sources with three Brave queries, up to 20 results each; deduplicate
+   URLs and apply the existing blacklist. Freshness filters are not forced because
+   page publication date is not event date.
+2. Scrape sequentially with Puppeteer, bounded retries, and HTTP fallback. Parse
+   per-source records and assign contiguous source indices to successful sources.
+3. Deduplicate and consolidate in batches of 30 events. The full source context is
+   still supplied to each consolidation batch to preserve matching behavior.
+4. Enrich distinct venue names with Gemini and Brave evidence, normalize dates,
+   and resolve event links/thumbnails. Link ranking is heuristic, not proof that a
+   URL is official. Prefer the selected page's OG/Twitter image; request Brave image
+   candidates when it has no usable image. Thumbnail failure does not discard a link.
+5. Write `data/compiled/{events,sources,generationTime}.json` and thumbnail files.
+   Raw snapshots and `run-summary.json` live under `data/tmp`; logs under `logs/runs`.
+6. Validate coverage before publishing. Upload and HEAD-verify every immutable
+   archive object, upload latest images/metadata, then replace `latest/events.json`
+   last. Never delete the old latest dataset before uploading.
+
+Publication is not an atomic transaction across all R2 keys: `events.json` is the
+commit point for frontend event records, but metadata can briefly precede it.
+Old latest images are deliberately retained so readers with cached old events
+keep working. Archive retention is 30 runs; retained latest images currently need
+separate garbage collection. Existing frontend URLs and event field names remain
+compatible. Coordinate/MRT inference is evidence-based but still needs human QA.
+
+## Budgets and publication gates
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `GEMINI_API_KEYS` | Yes (unless `GEMINI_API_KEY` provided) | Comma or newline separated list. You can also use `GEMINI_API_KEY` or numbered variants (`GEMINI_API_KEY_1=...`). The first key becomes primary and the rest are used when quota is exhausted. |
-| `OPENAI_API_KEY` | Conditionally | Required when any task preference uses provider `openai`. |
-| `OPENROUTER_API_KEY` | Conditionally | Required when any task preference uses provider `openrouter`. |
-| `NIM_API_KEY` | Conditionally | Required when any task preference uses provider `nim`. |
-| `GOOGLE_WEB_SEARCH_API_KEY` | Yes | Google Custom Search API key. |
-| `GOOGLE_WEB_SEARCH_ENGINE_ID` | Yes | The Custom Search CX/engine ID. |
-| `R2_ACCOUNT_ID` | Yes | Cloudflare account ID. |
-| `R2_BUCKET_NAME` | Yes | Target bucket containing `latest/` and `archive-*` folders. |
-| `R2_ACCESS_KEY_ID` | Yes | S3 access key for R2. |
-| `R2_SECRET_ACCESS_KEY` | Yes | S3 secret key for R2. |
-| `PERFORM_WEB_SEARCH` | No (default `true`) | Set to `false` to skip Google search discovery and rely only on `FIXED_URLS_TO_SCRAPE`. |
-| `BING_SEARCH_API_KEY` | No | Only used if you swap back to the Bing helper. |
-| `NODE_ENV` | No | Controls console logging verbosity; any non-production value logs all levels. |
+| `MAX_RUN_MINUTES` | 300 | Whole-process deadline |
+| `MAX_BRAVE_REQUESTS_PER_RUN` | 500 | Includes retries; cache hits do not count |
+| `MAX_LLM_REQUESTS_PER_RUN` | 1000 | Caps requests across providers |
+| `MIN_EVENTS` | 1 | Absolute event minimum; set to your normal baseline |
+| `MIN_SOURCES` | 1 | Absolute successful-source minimum |
+| `MIN_SOURCE_SUCCESS_RATIO` | 0.5 | Successful extraction / attempted source URLs |
+| `MIN_EVENT_RETENTION_RATIO` | 0.5 | New count / prior published count, per destination |
 
-> ⚠️ The run starts by deleting the entire `data/` directory (`lib/diskio.js`). Do not store anything you want to keep there.
+All model requests have a 20-minute timeout. Search/body downloads and R2 operations
+also have deadlines; image downloads are capped at 3 MB. Per-task/model request and
+token counters are included in the run summary; Gemini thinking tokens are separate,
+while OpenAI completion tokens already include reasoning. These are usage counters,
+not a dollar estimate. Provider prices, quotas and reasoning consumption can change.
+Fatal errors and publication failures set a nonzero process exit status. Empty or
+low-coverage results are kept locally for diagnosis and are not published.
 
-## Running the pipeline
-```bash
-node start.js
-```
+## GitHub Actions rollout
 
-`start.js` wraps `main()` from `index.js` and logs any top-level failures via Winston. Successful runs produce:
+`.github/workflows/test.yml` runs credential-free tests on pushes and PRs.
+`.github/workflows/scrape.yml` supports manual dry-run/staging/production runs.
+The schedule is 02:15 Singapore time on Tuesdays and Thursdays
+(`15 18 * * 1,3` in UTC), and only operates from the default
+branch after merge, when repository variable `AUTO_SCRAPE_ENABLED=true`.
+Scheduled runs default to staging; set `SCRAPER_PUBLISH_MODE=production` after
+validation. A global concurrency group prevents overlapping workflow publishers.
+Disable any old external production scheduler before enabling this one.
 
-```
-data/
-  tmp/
-    raw_<n>.txt                # scraped text snapshots
-    json_<n>.txt               # LLM parsed JSON per source
-    unique_events.json
-    unique_events_data.json
-  image-candidates/
-    <search slug>-<id>/
-      <image assets>.jpg|png   # per-event candidate pools (kept for review)
-  compiled/
-    events.json                # final consolidated payload
-    sources.json               # URLs & titles scraped this run
-    generationTime.json        # ISO timestamp
-    <image assets>.jpg|png     # thumbnails saved from search
-logs/
-  combined.log
-  error.log
-```
+Configure repository secrets: `BRAVE_SEARCH_API_KEY`, `OPENROUTER_API_KEY`,
+`NIM_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (or comma/newline-separated
+`GEMINI_API_KEYS`), `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and
+`R2_SECRET_ACCESS_KEY`. Budget and minimum-count variables above can also be set as
+repository variables. R2 credentials need read/list/write and archive-delete access.
 
-The `compiled/` folder is uploaded to Cloudflare R2 and mirrored to both `latest/` and an `archive-YYYYMMDD-HHMMSS/` folder. Older archives beyond the most recent 30 runs are automatically deleted.
-Candidate pools are staged separately under `data/image-candidates/` in per-search subfolders so you can review the raw downloads without uploading them.
+First run manual dry-run, then staging. Inspect extracted event counts, dates,
+coordinates, MRTs, source coverage, image matches, actual token use and runner
+runtime. The local test suite does not demonstrate live provider availability,
+Brave Singapore coverage, production quality, or scraping success from runner IPs.
+GitHub schedules may be delayed; use the published generation timestamp to monitor
+freshness. Run artifacts (logs, summary, compiled files) expire after seven days.
 
-## Customising behaviour
-Most knobs live in `lib/constants.js`:
-- `FIXED_URLS_TO_SCRAPE` seeds the crawler with known event feeds.
-- `SCRAPER_OPTIONS.PERFORM_WEB_SEARCH` reads from `PERFORM_WEB_SEARCH` to control Google discovery.
-- `SEARCH_TERM_FOR_EVENTS` is expanded into several monthly/weekend search phrases.
-- `BLACKLISTED_DOMAINS` filters out noisy hosts before scraping.
-- `PROMPT_TEMPLATES` load markdown instructions from `lib/prompts/` for the parsing, deduping, consolidation, and date range stages. Tweak these to change LLM behaviour.
-- `LLM_TASK_PREFERENCES` configures provider/model priority per pipeline stage (e.g., Gemini/OpenRouter/NIM/OpenAI combinations for parsing, consolidation, date ranges, and thumbnail image selection). Supported providers are `gemini`, `openai`, `openrouter`, and `nim`. For OpenRouter/NIM, use provider-qualified model IDs (examples: `mistralai/mistral-small-3.1-24b-instruct:free`, `meta/llama-3.1-70b-instruct`).
-- `EVENT_CATEGORY_GUIDANCE`, `REGION_GUIDANCE`, and MRT naming helpers are embedded into the prompts to encourage consistent metadata.
+OpenAI request compatibility was reviewed using model documentation and bundled
+migration guidance; the live migration-guide resource was unavailable.
 
-The crawler itself is implemented in `lib/crawler.js` using `puppeteer-extra` with the stealth plugin and an HTTP fallback path for JSON APIs. Update that file if you need different scraping heuristics or headers.
+## API references
 
-## Troubleshooting
-- **Quota limits**: Gemini requests rotate through any keys listed in `GEMINI_API_KEYS` when the free-tier cap is reached. Review `logs/combined.log` for rotation messages.
-- **Search failures**: Set `PERFORM_WEB_SEARCH=false` to run with only fixed URLs, or update `GOOGLE_WEB_SEARCH_*` credentials.
-- **Upload issues**: Check Cloudflare credentials and confirm the bucket exists. Failed uploads leave data in `data/compiled/` for manual inspection.
-- **Puppeteer timeouts**: The crawler catches transient errors and retries with back-off; persistent issues will be logged with the offending URL for manual debugging.
+- [OpenRouter Gemma 4 free](https://openrouter.ai/google/gemma-4-31b-it:free)
+- [NVIDIA Gemma 4 request contract](https://docs.api.nvidia.com/nim/reference/google-gemma-4-31b-it-infer)
+- [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+- [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
+- [Brave web search](https://api-dashboard.search.brave.com/api-reference/web/search/get)
+- [Brave image search](https://api-dashboard.search.brave.com/app/documentation/image-search/get-started)
