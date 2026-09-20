@@ -20,12 +20,12 @@ jobs:
   scrape:
     if: github.event_name == 'workflow_dispatch' || vars.AUTO_SCRAPE_ENABLED == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 330
     env:
       TZ: Asia/Singapore
       NODE_ENV: production
       PUBLISH_MODE: ${{ inputs.mode || vars.SCRAPER_PUBLISH_MODE || 'staging' }}
-      MAX_RUN_MINUTES: '150'
+      MAX_RUN_MINUTES: '300'
       MAX_LLM_REQUESTS_PER_RUN: ${{ vars.MAX_LLM_REQUESTS_PER_RUN || '1000' }}
       MAX_BRAVE_REQUESTS_PER_RUN: ${{ vars.MAX_BRAVE_REQUESTS_PER_RUN || '500' }}
       MIN_EVENTS: ${{ vars.MIN_EVENTS || '1' }}

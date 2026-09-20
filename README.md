@@ -32,8 +32,10 @@ OpenRouter free uses JSON object mode; NIM Gemma is prompted with the schema
 without sending an undocumented `response_format`. Paid OpenRouter and OpenAI
 use JSON schemas. AJV checks the original schema locally for all routes. Truncated
 responses are rejected rather than recursively requesting/stitching continuations.
-Luna uses `reasoning_effort: none`; Gemma thinking is disabled, GPT-OSS uses low
-reasoning, and Gemini uses minimal thinking. Responses are capped at 16,384 tokens
+Deduplication and consolidation use medium reasoning for Luna and GPT-OSS,
+medium thinking for Gemini, and enabled thinking for Gemma (an on/off control,
+not a calibrated medium level). Other tasks keep Luna reasoning off, Gemma
+thinking disabled, GPT-OSS reasoning low, and Gemini thinking low. Responses are capped at 16,384 tokens
 by default (1,024 for dates/images, 2,048 for location enrichment).
 
 The OpenAI adapter retains Chat Completions and the existing SDK; it sends no
@@ -70,7 +72,9 @@ PUBLISH_MODE=production npm start  # writes latest and archive-* in R2
 npm test                          # offline, mocked provider/search/storage tests
 ```
 
-The entry point uses `Asia/Singapore` time and a 150-minute runtime budget. Each
+The entry point uses `Asia/Singapore` time and a 300-minute runtime budget. The Actions job allows 330 minutes, leaving
+30 minutes for setup and artifact upload. The 20-minute LLM timeout applies to
+each request attempt; retries and fallback models share the overall run budget. Each
 run clears `data/`; do not put durable inputs there. API calls may incur charges
 in all three run modes. `PERFORM_WEB_SEARCH=false` skips discovery only; Brave is
 still used for enrichment.
@@ -104,7 +108,7 @@ compatible. Coordinate/MRT inference is evidence-based but still needs human QA.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MAX_RUN_MINUTES` | 150 | Whole-process deadline |
+| `MAX_RUN_MINUTES` | 300 | Whole-process deadline |
 | `MAX_BRAVE_REQUESTS_PER_RUN` | 500 | Includes retries; cache hits do not count |
 | `MAX_LLM_REQUESTS_PER_RUN` | 1000 | Caps requests across providers |
 | `MIN_EVENTS` | 1 | Absolute event minimum; set to your normal baseline |
@@ -112,7 +116,7 @@ compatible. Coordinate/MRT inference is evidence-based but still needs human QA.
 | `MIN_SOURCE_SUCCESS_RATIO` | 0.5 | Successful extraction / attempted source URLs |
 | `MIN_EVENT_RETENTION_RATIO` | 0.5 | New count / prior published count, per destination |
 
-All model requests have a 90-second timeout. Search/body downloads and R2 operations
+All model requests have a 20-minute timeout. Search/body downloads and R2 operations
 also have deadlines; image downloads are capped at 3 MB. Per-task/model request and
 token counters are included in the run summary; Gemini thinking tokens are separate,
 while OpenAI completion tokens already include reasoning. These are usage counters,

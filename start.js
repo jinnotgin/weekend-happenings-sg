@@ -2,7 +2,7 @@ import "dotenv/config";
 process.env.TZ = "Asia/Singapore";
 import logger from "#lib/logger.js";
 
-const maxMinutes = Number(process.env.MAX_RUN_MINUTES ?? 150);
+const maxMinutes = Number(process.env.MAX_RUN_MINUTES ?? 300);
 if (!Number.isFinite(maxMinutes) || maxMinutes <= 0) throw new Error("Invalid MAX_RUN_MINUTES");
 const deadline = setTimeout(() => {
     logger.error("Pipeline runtime budget exceeded");

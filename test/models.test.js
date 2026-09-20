@@ -72,3 +72,22 @@ test("dates reject impossible, reversed and arbitrary text values", () => {
         assert.throws(() => validateDateRange(range));
     }
 });
+
+ test("dedupe and consolidation enable reasoning on every chat fallback", () => {
+    for (const task of ["UNIQUE_EVENTS", "CONSOLIDATE_EVENTS"]) {
+        for (const { PROVIDER: provider, MODEL: model } of tasks[task].ORDERED) {
+            if (provider === "gemini") continue;
+            const request = buildChatRequest(provider, "events", { task, model });
+            if (provider === "openai") assert.equal(request.reasoning_effort, "medium");
+            else if (provider === "nim") assert.equal(request.chat_template_kwargs.enable_thinking, true);
+            else if (model.includes("gpt-oss")) assert.equal(request.reasoning.effort, "medium");
+            else assert.equal(request.reasoning.enabled, true);
+            assert.equal(request.max_completion_tokens ?? request.max_tokens, 16384);
+        }
+    }
+    for (const task of ["PARSE_EVENTS", "DATE_RANGES", "IMAGE_SELECTION"]) {
+        assert.equal(buildChatRequest("openai", "events", { task }).reasoning_effort, "none");
+        assert.equal(buildChatRequest("nim", "events", { task }).chat_template_kwargs.enable_thinking, false);
+        assert.equal(buildChatRequest("openrouter", "events", { task }).reasoning.enabled, false);
+    }
+});
