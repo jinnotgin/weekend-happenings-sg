@@ -124,7 +124,8 @@ low-coverage results are kept locally for diagnosis and are not published.
 
 `.github/workflows/test.yml` runs credential-free tests on pushes and PRs.
 `.github/workflows/scrape.yml` supports manual dry-run/staging/production runs.
-The daily schedule is 06:17 Singapore time and only operates from the default
+The schedule is 02:15 Singapore time on Tuesdays and Thursdays
+(`15 18 * * 1,3` in UTC), and only operates from the default
 branch after merge, when repository variable `AUTO_SCRAPE_ENABLED=true`.
 Scheduled runs default to staging; set `SCRAPER_PUBLISH_MODE=production` after
 validation. A global concurrency group prevents overlapping workflow publishers.
