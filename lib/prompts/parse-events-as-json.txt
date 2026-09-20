@@ -1,5 +1,5 @@
 You are tasked with extracting structured event information from a given text.
-Your goal is to identify all events and, for each event, extract detailed information and guess the approximate location data for its venue(s) in Singapore.
+Your goal is to identify all events and, for each event, extract detailed information and the venue names explicitly supplied by the source. Do not guess addresses, coordinates, regions, or MRT stations; a separate location stage handles that.
 
 Analyze the provided content text below the `===` separator.
 
@@ -24,3 +24,4 @@ Each **location object** must contain:
 ===
 {content}
 ===
+

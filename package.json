@@ -5,8 +5,9 @@
 	"type": "module",
 	"main": "index.js",
 	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1",
-		"gcp-build": "node node_modules/puppeteer/install.mjs"
+		"test": "NODE_ENV=production node --test",
+		"gcp-build": "node node_modules/puppeteer/install.mjs",
+		"start": "node start.js"
 	},
 	"author": "Jin",
 	"license": "ISC",
@@ -15,6 +16,7 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.478.0",
+		"ajv": "^8.20.0",
 		"dotenv": "^16.3.1",
 		"image-type": "^5.2.0",
 		"jsdom": "^23.0.1",
@@ -24,5 +26,8 @@
 		"puppeteer-extra": "^3.3.6",
 		"puppeteer-extra-plugin-stealth": "^2.11.2",
 		"winston": "^3.11.0"
+	},
+	"engines": {
+		"node": ">=22"
 	}
 }

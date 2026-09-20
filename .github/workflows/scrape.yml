@@ -1,0 +1,64 @@
+name: Refresh Singapore events
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Publication destination (dry-run makes API calls but does not upload)
+        type: choice
+        options: [dry-run, staging, production]
+        default: dry-run
+  schedule:
+    # 06:17 Singapore time daily. Schedule is active only after merging to default branch.
+    - cron: '17 22 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: singapore-events-publisher
+  cancel-in-progress: false
+jobs:
+  scrape:
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_SCRAPE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      TZ: Asia/Singapore
+      NODE_ENV: production
+      PUBLISH_MODE: ${{ inputs.mode || vars.SCRAPER_PUBLISH_MODE || 'staging' }}
+      MAX_RUN_MINUTES: '150'
+      MAX_LLM_REQUESTS_PER_RUN: ${{ vars.MAX_LLM_REQUESTS_PER_RUN || '1000' }}
+      MAX_BRAVE_REQUESTS_PER_RUN: ${{ vars.MAX_BRAVE_REQUESTS_PER_RUN || '500' }}
+      MIN_EVENTS: ${{ vars.MIN_EVENTS || '1' }}
+      MIN_SOURCES: ${{ vars.MIN_SOURCES || '1' }}
+      MIN_SOURCE_SUCCESS_RATIO: ${{ vars.MIN_SOURCE_SUCCESS_RATIO || '0.5' }}
+      MIN_EVENT_RETENTION_RATIO: ${{ vars.MIN_EVENT_RETENTION_RATIO || '0.5' }}
+      BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      NIM_API_KEY: ${{ secrets.NIM_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx puppeteer browsers install chrome --install-deps
+      - run: npm test
+      - run: npm start
+      - name: Retain run diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            logs/
+            data/tmp/run-summary.json
+            data/compiled/
+          retention-days: 7
+          if-no-files-found: ignore
