@@ -49,13 +49,9 @@ export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? null;
 export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? null;
 export const NIM_API_KEY = process.env.NIM_API_KEY ?? null;
 
-export const GOOGLE_WEB_SEARCH_API_KEY = required(
-	"GOOGLE_WEB_SEARCH_API_KEY",
-	process.env.GOOGLE_WEB_SEARCH_API_KEY
-);
-export const GOOGLE_WEB_SEARCH_ENGINE_ID = required(
-	"GOOGLE_WEB_SEARCH_ENGINE_ID",
-	process.env.GOOGLE_WEB_SEARCH_ENGINE_ID
+export const BRAVE_SEARCH_API_KEY = required(
+	"BRAVE_SEARCH_API_KEY",
+	process.env.BRAVE_SEARCH_API_KEY
 );
 
 export const R2_ACCOUNT_ID = required("R2_ACCOUNT_ID", process.env.R2_ACCOUNT_ID);

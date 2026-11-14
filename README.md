@@ -5,12 +5,12 @@ End-to-end pipeline for discovering Singapore events, normalising them with LLMs
 ## Pipeline overview
 
 - Reset the `data/` workspace at the start of every run.
-- Build a URL queue by merging fixed sources with Google Custom Search results (optional) and filtering out blacklisted domains.
+- Build a URL queue by merging fixed sources with Brave Search results (optional) and filtering out blacklisted domains.
 - Scrape each URL with Puppeteer (with robust retries and HTTP fallbacks) and persist the raw text snapshots under `data/tmp/`.
 - Extract structured event JSON, deduplicate titles, and consolidate unique events using per-task Gemini/OpenRouter model preferences and prompt templates in `lib/prompts/`. The OpenAI provider is also supported.
 - Resolve venues and match events against a persistent registry to assign stable IDs. Exact aliases retain branch and address details; uncertain matches use the registry matching models.
 - Enrich venue locations and generate human-friendly date ranges, reusing stored enrichment where applicable.
-- Resolve event links and thumbnails using Google Custom Search, or download a matched event's existing thumbnail from R2.
+- Resolve event links and thumbnails using Brave Search, or download a matched event's existing thumbnail from R2.
 - Write the compiled payload to `data/compiled/`, then push both a `latest/` copy and a timestamped archive to the configured Cloudflare R2 bucket (old archives are pruned beyond the most recent 30 runs).
 - Save structured JSON logs under `logs/runs/<runId>/` and stream progress to the console according to the configured log level.
 
@@ -22,7 +22,7 @@ End-to-end pipeline for discovering Singapore events, normalising them with LLMs
   - Google Gemini (REST API key; multiple keys supported for quota rotation)
   - OpenRouter API
   - OpenAI API (optional; the `openai` provider is supported but not in the default preferences)
-  - Google Custom Search API (key + CX/engine ID)
+  - Brave Search API (subscription token)
   - Cloudflare R2 bucket with S3-compatible credentials
   - Cloudflare D1 database and API token for stable registry storage on ephemeral runners; local development can use SQLite
   - Optional: Bing Search API (only if you reinstate the Bing helper)
@@ -44,8 +44,7 @@ Create a `.env` in the repository root. `dotenv/config` loads it automatically.
 | `GEMINI_API_KEYS` | Yes (unless `GEMINI_API_KEY` provided) | Comma or newline separated list. You can also use `GEMINI_API_KEY` or numbered variants (`GEMINI_API_KEY_1=...`). The first key becomes primary and the rest are used when quota is exhausted. |
 | `OPENAI_API_KEY` | Conditionally | Required when any task preference uses provider `openai`. |
 | `OPENROUTER_API_KEY` | Conditionally | Required when any task preference uses provider `openrouter`. |
-| `GOOGLE_WEB_SEARCH_API_KEY` | Yes | Google Custom Search API key. |
-| `GOOGLE_WEB_SEARCH_ENGINE_ID` | Yes | The Custom Search CX/engine ID. |
+| `BRAVE_SEARCH_API_KEY` | Yes | Brave Search API subscription token with web and image search access. |
 | `R2_ACCOUNT_ID` | Yes | Cloudflare account ID. |
 | `R2_BUCKET_NAME` | Yes | Target bucket containing `latest/` and `archive-*` folders. |
 | `R2_ACCESS_KEY_ID` | Yes | S3 access key for R2. |
@@ -54,13 +53,40 @@ Create a `.env` in the repository root. `dotenv/config` loads it automatically.
 | `D1_API_TOKEN` | For a D1 registry | Cloudflare API token with D1 Edit permission. |
 | `CLOUDFLARE_ACCOUNT_ID` | No | D1 account ID; defaults to `R2_ACCOUNT_ID`. |
 | `REGISTRY_SQLITE_PATH` | No | Local registry path when D1 configuration is incomplete; defaults to `.registry/registry.sqlite`. |
-| `PERFORM_WEB_SEARCH` | No (default `true`) | Set to `false` to skip Google search discovery and rely only on `FIXED_URLS_TO_SCRAPE`. |
-| `BING_SEARCH_API_KEY` | No | Only used if you swap back to the Bing helper. |
+| `PERFORM_WEB_SEARCH` | No (default `true`) | Set to `false` to skip Brave search discovery and rely only on `FIXED_URLS_TO_SCRAPE`. |
 | `NODE_ENV` | No | Console logging defaults to `error` in production and `info` otherwise. |
 | `LOG_CONSOLE_LEVEL` | No | Overrides console verbosity. The scheduled workflow uses `info`. |
 | `LOG_RETENTION_RUNS` | No (default `10`) | Number of run log directories to retain locally. |
 
 > ⚠️ The run starts by deleting the entire `data/` directory (`lib/diskio.js`). Do not store anything you want to keep there.
+
+## Brave Search
+
+Set `BRAVE_SEARCH_API_KEY` locally and as a GitHub Actions repository secret. Google
+Custom Search credentials and engine IDs are no longer used. Obtain a token from
+[Brave's API dashboard](https://api-dashboard.search.brave.com/), with access to
+both [web search](https://api-dashboard.search.brave.com/api-reference/web/search/get)
+and [image search](https://api-dashboard.search.brave.com/api-reference/images/image_search).
+
+Search uses Singapore (`country=SG`), English, and strict SafeSearch. Discovery
+requests up to two ten-result pages for each of the three search terms, deduplicates
+URLs, and stops when Brave reports no more results. Requests are paced at least
+1.1 seconds apart across discovery and enrichment to accommodate a 1-request/second
+subscription; web-search HTTP failures propagate to the pipeline's existing retry helper.
+
+Event enrichment first downloads non-logo thumbnails from ranked web results,
+preferring original images. If fewer than the configured candidate limit download
+successfully, a separate image search supplies additional candidates. The existing
+vision selection still chooses the final thumbnail. Image candidates retain both
+the image URL (`sourceUrl`) and its source page (`pageUrl`). Dedicated image search
+can return older editions or other countries, so include identifying edition/year
+information in event titles where available. Missing images do not discard event
+links, including when image search is unavailable. Cached event thumbnails still bypass search.
+
+`PERFORM_WEB_SEARCH=false` skips discovery only; enrichment still requires Brave.
+A normal uncached event uses one web request and at most one additional image-search
+request per attempt. Discovery uses up to six requests per run. Check the account's
+current allowance before live runs; this migration does not change billing settings.
 
 ## Running the pipeline
 
@@ -148,6 +174,6 @@ The crawler itself is implemented in `lib/crawler.js` using `puppeteer-extra` wi
 
 - **Quota limits**: Gemini requests rotate through any keys listed in `GEMINI_API_KEYS` when the free-tier cap is reached. Review `logs/runs/<runId>/combined.log` for rotation messages.
 - **Missing or changing IDs**: Check registry startup logs and the D1 configuration. SQLite identities persist only where the database file is retained between runs.
-- **Search failures**: Set `PERFORM_WEB_SEARCH=false` to run with only fixed URLs, or update `GOOGLE_WEB_SEARCH_*` credentials.
+- **Search failures**: Set `PERFORM_WEB_SEARCH=false` to run with only fixed URLs, or update the `BRAVE_SEARCH_API_KEY` credential.
 - **Upload issues**: Check Cloudflare credentials and confirm the bucket exists. Failed uploads leave data in `data/compiled/` for manual inspection.
 - **Puppeteer timeouts**: The crawler catches transient errors and retries with back-off; persistent issues will be logged with the offending URL for manual debugging.

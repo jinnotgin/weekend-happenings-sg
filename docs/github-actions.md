@@ -17,8 +17,7 @@ Go to **Repo → Settings → Secrets and variables → Actions → Secrets → 
 | Secret | Required? | Value |
 | --- | --- | --- |
 | `GEMINI_API_KEYS` | Yes | Same as in `.env`. Separate multiple keys with commas. |
-| `GOOGLE_WEB_SEARCH_API_KEY` | Yes | Google Custom Search key |
-| `GOOGLE_WEB_SEARCH_ENGINE_ID` | Yes | Custom Search CX |
+| `BRAVE_SEARCH_API_KEY` | Yes | Brave Search subscription token with web and image search access |
 | `R2_ACCOUNT_ID` | Yes | Cloudflare account ID |
 | `R2_BUCKET_NAME` | Yes | Bucket name |
 | `R2_ACCESS_KEY_ID` | Yes | R2 S3 access key |
@@ -27,12 +26,12 @@ Go to **Repo → Settings → Secrets and variables → Actions → Secrets → 
 | `OPENROUTER_API_KEY` | Only if a task uses `openrouter` | |
 | `D1_API_TOKEN` | For stable venue/event IDs | API token with **D1 Edit** on the registry database (see 1.3) |
 
-If any of the four `GOOGLE_*`/`R2_*` groups is missing, the run fails within seconds with `Missing required environment variable: …`.
+If `BRAVE_SEARCH_API_KEY` or a required `R2_*` credential is missing, the run fails within seconds with `Missing required environment variable: …`.
 
 **Shortcut with the GitHub CLI.** This copies just these keys from your local `.env`:
 
 ```bash
-gh secret set -f <(grep -E '^(GEMINI_API_KEYS|OPENAI_API_KEY|OPENROUTER_API_KEY|GOOGLE_WEB_SEARCH_API_KEY|GOOGLE_WEB_SEARCH_ENGINE_ID|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY)=' .env)
+gh secret set -f <(grep -E '^(GEMINI_API_KEYS|OPENAI_API_KEY|OPENROUTER_API_KEY|BRAVE_SEARCH_API_KEY|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY)=' .env)
 ```
 
 Then check that the names are there (values are never shown):

@@ -27,11 +27,10 @@ import {
 	CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
 	DATE_RANGES_RESPONSE_SCHEMA,
 } from "#lib/schemas/index.js";
-// import { getWebLinkAndSaveImage } from "#lib/bing-search.js";
 import {
 	getSearchResultsUrls,
 	getWebLinkAndSaveImage,
-} from "#lib/google-search.js";
+} from "#lib/brave-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
 import { locateVenuesForEvents, locateRegistryVenues } from "#lib/locate-venues.js";
 import { downloadObject } from "#lib/upload-r2.js";
@@ -190,7 +189,7 @@ export async function main() {
 			searchTermCount: searchTerms.length,
 		});
 	} else {
-		logger.info("Stage: Web search disabled; skipping Google search results");
+		logger.info("Stage: Web search disabled; skipping Brave search results");
 	}
 
 	const urlsToScrape = [...new Set([...fixedUrls, ...searchResultUrls])].filter(
@@ -594,7 +593,7 @@ export async function main() {
 				}
 			}
 			try {
-				// Unquoted so Google matches the title loosely; an exact-phrase match on a long
+				// Unquoted so Brave matches the title loosely; an exact-phrase match on a long
 				// LLM-written title often returns few or no results.
 				const searchQuery = `${title} singapore`;
 				logger.info(`Getting link and thumbnails for ${title}`);
