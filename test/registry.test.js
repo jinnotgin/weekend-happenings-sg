@@ -21,7 +21,7 @@ async function openMemoryRegistry(today = "2026-11-14", executor = null) {
 // the top candidate when it shares that first segment, and marks nothing as a non-place.
 function fakeVenueLlm(prompt) {
 	const { names } = JSON.parse(prompt);
-	const firstSegment = (name) => normalizeVenueName(name.split(",")[0]);
+	const firstSegment = (name) => normalizeVenueName(name.split(",")[0].replace(/\s*\(ACM\)/g, ""));
 	const groups = new Map();
 	for (const item of names) {
 		const key = firstSegment(item.name);
@@ -40,7 +40,7 @@ function fakeVenueLlm(prompt) {
 
 const failingLlm = () => Promise.reject(new Error("LLM unavailable"));
 
-test("normalizeVenueName strips addresses, units and abbreviations", () => {
+test("normalizeVenueName strips addresses and units while preserving qualifiers", () => {
 	assert.equal(normalizeVenueName("Asian Civilisations Museum, 1 Empress Place"), "asian civilisations museum");
 	assert.equal(normalizeVenueName("Asian Civilisations Museum"), "asian civilisations museum");
 	assert.equal(
@@ -161,7 +161,7 @@ test("events keep their ID when details change, and reuse date ranges safely", a
 		locations: [{ venue_id: venue.id }],
 		thumbnail: "abc.png",
 	});
-	run1.setThumbnailKeys((filename) => `archive-20261110-013300/${filename}`);
+	run1.setThumbnailKeys((filename) => `archive-20261110-013300/${filename}`, new Set(["abc.png"]));
 	await run1.commit();
 
 	const run2 = (await openMemoryRegistry("2026-11-14", executor)).registry;
@@ -193,7 +193,7 @@ test("ambiguous events go to the LLM and one stored event is claimed once", asyn
 	const { registry } = await openMemoryRegistry();
 	const esplanade = registry.createVenue("Esplanade");
 	const gallery = registry.createVenue("National Gallery");
-	const stored = registry.upsertEvent({ title: "Christmas Market", locations: [{ venue_id: esplanade.id }] });
+	const stored = registry.upsertEvent({ title: "Christmas Market", datetime: "14 Nov 2026", locations: [{ venue_id: esplanade.id }] });
 
 	const elsewhere = { title: "Christmas Market", locations: [{ venue_id: gallery.id }] };
 	let askedKeys = [];
@@ -206,9 +206,89 @@ test("ambiguous events go to the LLM and one stored event is claimed once", asyn
 	assert.equal(askedKeys.length, 1, "same title at a different venue is asked, not auto-matched");
 	assert.equal(matches.size, 0);
 
-	const twinA = { title: "Christmas Market", locations: [{ venue_id: esplanade.id }] };
-	const twinB = { title: "Christmas Market", locations: [{ venue_id: esplanade.id }] };
+	const twinA = { title: "Christmas Market", datetime: "14 Nov 2026", locations: [{ venue_id: esplanade.id }] };
+	const twinB = { title: "Christmas Market", datetime: "14 Nov 2026", locations: [{ venue_id: esplanade.id }] };
 	const twinMatches = await matchEventsToRegistry([twinA, twinB], registry, { llm });
 	assert.equal(twinMatches.size, 1);
 	assert.equal([...twinMatches.values()][0].id, stored.id);
+});
+
+
+test("branch qualifiers remain distinct with model matching and deterministic fallback", async () => {
+	for (const llm of [fakeVenueLlm, failingLlm]) {
+		const { registry } = await openMemoryRegistry();
+		const events = [
+			{ locations: [{ name: "Wildseed Café (Alkaff Mansion)" }] },
+			{ locations: [{ name: "Wildseed Café (The Summerhouse)" }] },
+		];
+		await resolveVenuesForEvents(events, registry, { llm });
+		assert.equal(normalizeVenueName(events[0].locations[0].name), "wildseed cafe alkaff mansion");
+		assert.notEqual(events[0].locations[0].venue_id, events[1].locations[0].venue_id);
+		assert.match(events[0].locations[0].venue_name, /Alkaff Mansion/);
+		assert.match(events[1].locations[0].venue_name, /Summerhouse/);
+	}
+});
+
+test("only identical title, shared venue and unchanged explicit datetime skip model matching", async () => {
+	const { registry } = await openMemoryRegistry();
+	const venue = registry.createVenue("Esplanade");
+	const stored = registry.upsertEvent({
+		title: "Jazz Night", datetime: "14 Nov 2026", description: "An intimate jazz concert",
+		daterange: ["14 Nov 2026", "14 Nov 2026"], locations: [{ venue_id: venue.id }],
+	});
+	const variants = [
+		{ title: "Jazz Night", datetime: "14 Nov 2026", auto: true },
+		{ title: "Jazz Night: Tribute to Miles Davis", datetime: "14 Nov 2026" },
+		{ title: "Jazz Night", datetime: "28 Nov 2026" },
+		{ title: "Jazz Night", datetime: "" },
+		{ title: "Jazz Night", datetime: "14 Nov 2026", noVenue: true },
+	];
+	for (const variant of variants) {
+		const event = { ...variant, description: "Current concert description",
+			locations: variant.noVenue ? [] : [{ venue_id: venue.id }] };
+		let calls = 0;
+		const llm = async (prompt) => {
+			calls++;
+			const [input] = JSON.parse(prompt).events;
+			assert.equal(input.description, event.description);
+			assert.equal(input.candidates[0].description, stored.description);
+			assert.deepEqual(input.candidates[0].daterange, stored.daterange);
+			return { parsedJson: { matches: [{ key: input.key, event_id: null }] } };
+		};
+		const matches = await matchEventsToRegistry([event], registry, { llm });
+		assert.equal(calls, variant.auto ? 0 : 1, JSON.stringify(variant));
+		assert.equal(matches.get(event)?.id ?? null, variant.auto ? stored.id : null);
+	}
+});
+
+test("unchanged relative dates do not automatically reuse a previous session", async () => {
+	const { registry } = await openMemoryRegistry();
+	const venue = registry.createVenue("Esplanade");
+	registry.upsertEvent({ title: "Jazz Night", datetime: "This weekend",
+		locations: [{ venue_id: venue.id }] });
+	const event = { title: "Jazz Night", datetime: "This weekend", locations: [{ venue_id: venue.id }] };
+	let asked = false;
+	const matches = await matchEventsToRegistry([event], registry, { llm: async (prompt) => {
+		asked = true;
+		return { parsedJson: { matches: [{ key: JSON.parse(prompt).events[0].key, event_id: null }] } };
+	} });
+	assert.equal(asked, true);
+	assert.equal(matches.size, 0);
+});
+
+test("model may preserve renamed or rescheduled events, but unavailable matching keeps them new", async () => {
+	const { registry } = await openMemoryRegistry();
+	const venue = registry.createVenue("Esplanade");
+	const stored = registry.upsertEvent({ title: "Jazz Night", datetime: "14 Nov 2026",
+		locations: [{ venue_id: venue.id }] });
+	for (const event of [
+		{ title: "Jazz Night: Encore", datetime: "14 Nov 2026", locations: [{ venue_id: venue.id }] },
+		{ title: "Jazz Night", datetime: "28 Nov 2026", locations: [{ venue_id: venue.id }] },
+	]) {
+		const acceptingLlm = async (prompt) => ({ parsedJson: { matches: [
+			{ key: JSON.parse(prompt).events[0].key, event_id: stored.id },
+		] } });
+		assert.equal((await matchEventsToRegistry([event], registry, { llm: acceptingLlm })).get(event)?.id, stored.id);
+		assert.equal((await matchEventsToRegistry([event], registry, { llm: failingLlm })).size, 0);
+	}
 });

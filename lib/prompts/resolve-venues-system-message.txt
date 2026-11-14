@@ -14,6 +14,8 @@ Group the names into real-world places and return a single JSON object directly,
 -   `is_place`: `false` only for names that are not a place someone could visit, e.g. "Various locations", "Online", "Islandwide", "TBA". Otherwise `true`. Neighbourhoods, streets and parks such as "Orchard Road" or "Rail Corridor" are places.
 
 Matching rules:
+-   Branch qualifiers identify distinct places and must be preserved in canonical names: "Wildseed Café (Alkaff Mansion)" and "Wildseed Café (The Summerhouse)" are different venues. Parentheses may be removed, but keep the words inside them (e.g. "Wildseed Café Alkaff Mansion").
+-   A parenthetical abbreviation may refer to the same place: "Asian Civilisations Museum (ACM)" = "Asian Civilisations Museum". Distinguish abbreviations from branch names.
 -   Same building or venue with different wording, addresses or units is the same place: "Asian Civilisations Museum, 1 Empress Place" = "Asian Civilisations Museum".
 -   A hall, room or level inside a venue belongs to that venue: "Singapore EXPO, Hall 6" = "Singapore EXPO".
 -   A distinct, separately named venue inside a larger complex is its own place: "Sands Theatre at Marina Bay Sands" is not "Marina Bay Sands", and "Flower Dome, Gardens by the Bay" is not "Gardens by the Bay".

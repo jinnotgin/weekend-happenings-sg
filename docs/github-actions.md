@@ -63,7 +63,7 @@ The pipeline gives venues and events stable IDs (so the frontend can star venues
 3. Add `D1_API_TOKEN` as a secret and `D1_DATABASE_ID` (production ID) as a variable. The account ID is taken from `R2_ACCOUNT_ID`; set `CLOUDFLARE_ACCOUNT_ID` only if D1 lives in a different account.
 4. Locally, put the **dev** database ID in `.env`, or leave D1 unset to use `.registry/registry.sqlite`.
 
-The schema (`db/schema.sql`) is applied automatically at the start of every run. If D1 is unreachable, the run continues without IDs instead of failing.
+The schema (`db/schema.sql`) is applied automatically at the start of every run. If D1 is unreachable when opening the registry, the run continues without IDs. Once a registry is open, venue/event identities must be saved successfully before replacing the public feed; a save failure stops publication and fails the run. Thumbnail archive keys are saved separately after a successful upload, only for files included in that archive.
 
 Admin commands (merge duplicate venues, rename, add aliases) use the same configuration:
 

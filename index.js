@@ -34,7 +34,8 @@ import {
 } from "#lib/google-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
 import { locateVenuesForEvents, locateRegistryVenues } from "#lib/locate-venues.js";
-import { uploadAndUpdateLatest, downloadObject } from "#lib/upload-r2.js";
+import { downloadObject } from "#lib/upload-r2.js";
+import { publishCompiledArtifacts } from "#lib/publish-artifacts.js";
 import { createExecutorFromEnv } from "#lib/registry/executors.js";
 import { Registry } from "#lib/registry/store.js";
 import { resolveVenuesForEvents } from "#lib/registry/resolve-venues.js";
@@ -709,40 +710,15 @@ export async function main() {
 	);
 
 	const compiledDir = getDirectoryPath("compiled");
-	let uploadResult = null;
 	try {
-		logger.info("Stage: Uploading compiled artifacts to R2");
-		uploadResult = await retryAsyncFunction(async () => {
-			const result = await uploadAndUpdateLatest(compiledDir);
-			if (!result) {
-				throw new Error("Upload to R2 reported failure.");
-			}
-			return result;
-		}, 2);
-		logger.info("Remote upload completed successfully.");
-		logger.summary("Remote upload completed successfully.");
+		await publishCompiledArtifacts(compiledDir, { registry });
 	} catch (error) {
 		logger.error(
-			"Unable to upload results to R2 after retries. Data remains available locally.",
+			"Unable to complete registry persistence and publication. Data remains available locally.",
 			{ errorMessage: error?.message }
 		);
 		// Keep going so the run summary is logged, but flag the run as failed.
 		process.exitCode = 1;
-	}
-
-	if (registry) {
-		try {
-			logger.info("Stage: Saving registry");
-			if (uploadResult?.archiveFolder) {
-				registry.setThumbnailKeys((filename) => `${uploadResult.archiveFolder}/${filename}`);
-			}
-			const statementCount = await retryAsyncFunction(() => registry.commit(), 2);
-			logger.summary("Registry saved", { statementCount, ...registry.stats });
-		} catch (error) {
-			// IDs in this run's events.json are not persisted: next run may assign new ones.
-			logger.error("Unable to save registry", { errorMessage: error?.message });
-			process.exitCode = 1;
-		}
 	}
 
 	logger.summary("Run completed", {
