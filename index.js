@@ -33,10 +33,27 @@ import {
 	getWebLinkAndSaveImage,
 } from "#lib/google-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
+import { locateVenuesForEvents } from "#lib/locate-venues.js";
 import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
 
 const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
 const UNIQUE_EVENT_BATCH_SIZE = 30;
+// DATE_RANGES runs on paid Luna first (no meaningful RPM cap), so several events can be
+// in flight at once. Keep modest: its last fallback is the free 3.5 Flash-Lite pool (15 RPM).
+const DATE_RANGES_CONCURRENCY = 5;
+
+// Runs `worker` over `items` with at most `limit` in flight; preserves no ordering guarantees
+// for side effects but resolves once every item has finished.
+async function mapWithConcurrency(items, limit, worker) {
+	let nextIndex = 0;
+	const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (nextIndex < items.length) {
+			const item = items[nextIndex++];
+			await worker(item);
+		}
+	});
+	await Promise.all(runners);
+}
 
 async function persistCandidateThumbnail(savedImage) {
 	if (!savedImage?.filename) {
@@ -313,13 +330,9 @@ export async function main() {
 		uniqueEventsData_jsonString = JSON.stringify({ events: [] });
 	} else {
 		logger.info("Stage: Collating data for each unique event");
+		// Structured output is always on, and free-tier Gemini has no Google Search
+		// grounding, so the former Gemini google_search tool path was removed.
 		const consolidationPreferences = LLM_TASK_PREFERENCES.CONSOLIDATE_EVENTS;
-		const isGeminiPrimary = consolidationPreferences.PRIMARY?.PROVIDER === "gemini";
-		const useStructuredSchema = true;
-		const allowGeminiTools = isGeminiPrimary && !useStructuredSchema;
-		const toolGuidance = allowGeminiTools
-			? "If you cannot confirm a field (especially datetime) from the provided data, use the available Google Search tool to look up authoritative sources, and attempt to resolve the missing information."
-			: "";
 		const uniqueEventsBatches = chunkArray(
 			uniqueEventSummaries,
 			UNIQUE_EVENT_BATCH_SIZE
@@ -346,9 +359,7 @@ export async function main() {
 						PROMPT_TEMPLATES.PREPARE_UNIQUE_EVENTS_DATA_SYSTEM_MESSAGE.replace(
 							"{uniqueEvents}",
 							formatUniqueEventsForPrompt(batchSummaries)
-						).replace("{TOOL_GUIDANCE}", toolGuidance),
-					tools:
-						allowGeminiTools ? [{ google_search: {} }] : undefined,
+						),
 					responseSchema: {
 						name: "ConsolidatedEvents",
 						schema: CONSOLIDATED_EVENTS_RESPONSE_SCHEMA,
@@ -391,6 +402,27 @@ export async function main() {
 	);
 
 	if (uniqueEventsData.length > 0) {
+		// The three enrichment stages below run CONCURRENTLY (Promise.allSettled at the end).
+		// Each writes different fields of an event (locations / daterange / link+thumbnail)
+		// and they mostly use different rate-limit pools: LOCATE_VENUES -> free 3.5 Flash-Lite
+		// (15 RPM, self-paced), DATE_RANGES -> paid Luna (no meaningful RPM cap, so events run
+		// in parallel), thumbnails -> web search + free 3.1 Flash-Lite (kept serial: the search
+		// API and 15 RPM pool are the limits). Total time ~= the slowest stage, not the sum.
+		// Only shared pool: DATE_RANGES' last fallback is free 3.5 Flash-Lite; per-minute 429s
+		// there are absorbed by the Gemini client's wait-and-retry.
+
+		// LOCATE_VENUES: one call per event (sequential, ~4s apart for the 15 RPM free tier).
+		// Fills approximate_region/gps/nearest_mrt/google_maps_url on each location; on
+		// failure the event is kept with those fields null.
+		async function runLocateVenuesStage() {
+			logger.info("Stage: Locating event venues", {
+				eventCount: uniqueEventsData.length,
+			});
+			const locateCalls = await locateVenuesForEvents(uniqueEventsData);
+			logger.info("Stage: Venue location completed", { locateCalls });
+		}
+
+		async function runDateRangesStage() {
 		logger.info("Stage: Generating structured datetimes");
 		async function processDateRange(datetime, retryCount = 3) {
 			function formatDate(date = new Date()) {
@@ -445,7 +477,7 @@ export async function main() {
 			);
 		}
 
-		for (let item of uniqueEventsData) {
+		await mapWithConcurrency(uniqueEventsData, DATE_RANGES_CONCURRENCY, async (item) => {
 			try {
 				logger.info(`Processing date range for event: ${item.title}`);
 				const dateRange = await processDateRange(item.datetime);
@@ -459,10 +491,12 @@ export async function main() {
 				// You might want to set a default value or flag here
 				item.daterange = "Error: Unable to process";
 			}
-		}
+		});
 
 		logger.info("Stage: Structured datetimes generation completed");
+		}
 
+		async function runThumbnailsStage() {
 		logger.info("Stage: Resolving event links and thumbnails");
 		for (let item of uniqueEventsData) {
 			const { title = "", location = "", datetime = "" } = item;
@@ -551,6 +585,21 @@ export async function main() {
 			}
 		}
 		logger.info("Stage: Event link and thumbnail resolution completed");
+		}
+
+		const stageNames = ["LOCATE_VENUES", "DATE_RANGES", "THUMBNAILS"];
+		const stageResults = await Promise.allSettled([
+			runLocateVenuesStage(),
+			runDateRangesStage(),
+			runThumbnailsStage(),
+		]);
+		stageResults.forEach((result, index) => {
+			if (result.status === "rejected") {
+				logger.error(`Enrichment stage ${stageNames[index]} failed`, {
+					errorMessage: result.reason?.message,
+				});
+			}
+		});
 	} else {
 		logger.warn("No unique event data available; skipping date range and asset enrichment stages");
 	}

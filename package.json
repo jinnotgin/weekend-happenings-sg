@@ -6,8 +6,7 @@
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"gcp-build": "node node_modules/puppeteer/install.mjs",
-		"test:nim": "node scripts/test-nim.js"
+		"gcp-build": "node node_modules/puppeteer/install.mjs"
 	},
 	"author": "Jin",
 	"license": "ISC",

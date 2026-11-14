@@ -17,9 +17,8 @@ End-to-end pipeline for discovering Singapore events, normalising them with LLMs
 - npm 9+ (bundled with Node 20)
 - API access:
   - Google Gemini (REST API key; multiple keys supported for quota rotation)
-  - OpenAI API
   - OpenRouter API
-  - NVIDIA NIM API (optional, for `nim` provider preferences)
+  - OpenAI API (optional; the `openai` provider is supported but not in the default preferences)
   - Google Custom Search API (key + CX/engine ID)
   - Cloudflare R2 bucket with S3-compatible credentials
   - Optional: Bing Search API (only if you reinstate the Bing helper)
@@ -39,7 +38,6 @@ Create a `.env` in the repository root. `dotenv/config` loads it automatically.
 | `GEMINI_API_KEYS` | Yes (unless `GEMINI_API_KEY` provided) | Comma or newline separated list. You can also use `GEMINI_API_KEY` or numbered variants (`GEMINI_API_KEY_1=...`). The first key becomes primary and the rest are used when quota is exhausted. |
 | `OPENAI_API_KEY` | Conditionally | Required when any task preference uses provider `openai`. |
 | `OPENROUTER_API_KEY` | Conditionally | Required when any task preference uses provider `openrouter`. |
-| `NIM_API_KEY` | Conditionally | Required when any task preference uses provider `nim`. |
 | `GOOGLE_WEB_SEARCH_API_KEY` | Yes | Google Custom Search API key. |
 | `GOOGLE_WEB_SEARCH_ENGINE_ID` | Yes | The Custom Search CX/engine ID. |
 | `R2_ACCOUNT_ID` | Yes | Cloudflare account ID. |
@@ -88,8 +86,8 @@ Most knobs live in `lib/constants.js`:
 - `SCRAPER_OPTIONS.PERFORM_WEB_SEARCH` reads from `PERFORM_WEB_SEARCH` to control Google discovery.
 - `SEARCH_TERM_FOR_EVENTS` is expanded into several monthly/weekend search phrases.
 - `BLACKLISTED_DOMAINS` filters out noisy hosts before scraping.
-- `PROMPT_TEMPLATES` load markdown instructions from `lib/prompts/` for the parsing, deduping, consolidation, and date range stages. Tweak these to change LLM behaviour.
-- `LLM_TASK_PREFERENCES` configures provider/model priority per pipeline stage (e.g., Gemini/OpenRouter/NIM/OpenAI combinations for parsing, consolidation, date ranges, and thumbnail image selection). Supported providers are `gemini`, `openai`, `openrouter`, and `nim`. For OpenRouter/NIM, use provider-qualified model IDs (examples: `mistralai/mistral-small-3.1-24b-instruct:free`, `meta/llama-3.1-70b-instruct`).
+- `PROMPT_TEMPLATES` load markdown instructions from `lib/prompts/` for the parsing, deduping, consolidation, venue location, and date range stages. Tweak these to change LLM behaviour.
+- `LLM_TASK_PREFERENCES` configures provider/model fallback order per pipeline stage (parsing, unique events, consolidation, venue location, date ranges, thumbnail image selection). Supported providers are `gemini`, `openrouter`, and `openai`. Entries may carry `OPTIONS: { REASONING_EFFORT }` (mapped to OpenRouter `reasoning.effort` or Gemini `thinkingLevel`). For OpenRouter, use provider-qualified model IDs (e.g. `openai/gpt-6-luna`). The dated "MODEL SELECTION RATIONALE" comment in that file explains the current choices and how to re-evaluate them.
 - `EVENT_CATEGORY_GUIDANCE`, `REGION_GUIDANCE`, and MRT naming helpers are embedded into the prompts to encourage consistent metadata.
 
 The crawler itself is implemented in `lib/crawler.js` using `puppeteer-extra` with the stealth plugin and an HTTP fallback path for JSON APIs. Update that file if you need different scraping heuristics or headers.
