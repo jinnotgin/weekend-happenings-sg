@@ -31,6 +31,8 @@ jobs:
       # Pipeline uses local time for "this weekend", month names and date ranges.
       TZ: Asia/Singapore
       NODE_ENV: production
+      # Production defaults the console to errors only; stream progress into the job log.
+      LOG_CONSOLE_LEVEL: info
       PERFORM_WEB_SEARCH: ${{ inputs.perform_web_search || vars.PERFORM_WEB_SEARCH || 'true' }}
       PUPPETEER_CACHE_DIR: ${{ github.workspace }}/.cache/puppeteer
 
