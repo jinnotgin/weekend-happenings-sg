@@ -46,7 +46,7 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       # Venue/event registry (stable IDs for starring). Unset => throwaway local SQLite.
-      D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       D1_API_TOKEN: ${{ secrets.D1_API_TOKEN }}
       D1_ACCOUNT_ID: ${{ vars.D1_ACCOUNT_ID }}
 
