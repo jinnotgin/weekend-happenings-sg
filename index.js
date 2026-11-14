@@ -173,13 +173,23 @@ export async function main() {
 	for (let index = 0; index < urlsToScrape.length; index++) {
 		const url = urlsToScrape[index];
 		try {
-			logger.info(`Getting text from ${url}`);
+			logger.info(
+				`[${index + 1}/${urlsToScrape.length}] Getting text from ${url}`,
+				{
+					order: "puppeteer (2 tries) -> direct-fetch -> proxy-fetch",
+					outerRetries: RETRY_COUNT,
+				}
+			);
 			const { title = null, data = null } = await retryAsyncFunction(
 				scrapeUrlForTextTags,
 				RETRY_COUNT,
 				url
 			);
-			if (!data) throw new Error("No data available.");
+			if (!data) {
+				throw new Error(
+					`Scrape returned no text (title: ${JSON.stringify(title)}); skipping LLM extraction`
+				);
+			}
 
 			sources.push({ title, url });
 			saveAsText(data, getFilePath("tmp", `raw_${index}`, "txt"));
