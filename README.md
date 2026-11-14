@@ -52,7 +52,7 @@ Create a `.env` in the repository root. `dotenv/config` loads it automatically.
 | `R2_SECRET_ACCESS_KEY` | Yes | S3 secret key for R2. |
 | `D1_DATABASE_ID` | For a D1 registry | Database ID; use a separate development database locally. |
 | `D1_API_TOKEN` | For a D1 registry | Cloudflare API token with D1 Edit permission. |
-| `CLOUDFLARE_ACCOUNT_ID` | No | D1 account ID; defaults to `R2_ACCOUNT_ID`. |
+| `D1_ACCOUNT_ID` | No | D1 account ID; defaults to `R2_ACCOUNT_ID`. |
 | `REGISTRY_SQLITE_PATH` | No | Local registry path when D1 configuration is incomplete; defaults to `.registry/registry.sqlite`. |
 | `PERFORM_WEB_SEARCH` | No (default `true`) | Set to `false` to skip Google search discovery and rely only on `FIXED_URLS_TO_SCRAPE`. |
 | `BING_SEARCH_API_KEY` | No | Only used if you swap back to the Bing helper. |
