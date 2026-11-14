@@ -583,6 +583,8 @@ export async function main() {
 			"Unable to upload results to R2 after retries. Data remains available locally.",
 			{ errorMessage: error?.message }
 		);
+		// Keep going so the run summary is logged, but flag the run as failed.
+		process.exitCode = 1;
 	}
 
 	logger.summary("Run completed", {

@@ -1,0 +1,82 @@
+name: Update weekend happenings
+
+on:
+  schedule:
+    # GitHub cron is UTC. 17:33 UTC Mon/Wed = 01:33 SGT Tue/Thu.
+    # Off the top/half hour to dodge GitHub's busiest scheduling slots.
+    - cron: "33 17 * * 1,3"
+  workflow_dispatch:
+    inputs:
+      perform_web_search:
+        description: "Run Google search discovery (false = fixed URLs only)"
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+
+permissions:
+  contents: read
+
+# Never let two runs overlap (e.g. a manual run during a scheduled one).
+concurrency:
+  group: update-events
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    # Hard cap so one stuck run can't burn a big slice of the 2,000 free minutes.
+    timeout-minutes: 240
+
+    env:
+      # Pipeline uses local time for "this weekend", month names and date ranges.
+      TZ: Asia/Singapore
+      NODE_ENV: production
+      PERFORM_WEB_SEARCH: ${{ inputs.perform_web_search || vars.PERFORM_WEB_SEARCH || 'true' }}
+      PUPPETEER_CACHE_DIR: ${{ github.workspace }}/.cache/puppeteer
+
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GOOGLE_WEB_SEARCH_API_KEY: ${{ secrets.GOOGLE_WEB_SEARCH_API_KEY }}
+      GOOGLE_WEB_SEARCH_ENGINE_ID: ${{ secrets.GOOGLE_WEB_SEARCH_ENGINE_ID }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Puppeteer Chrome
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PUPPETEER_CACHE_DIR }}
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # npm ci skips Puppeteer's postinstall download when it thinks Chrome is cached;
+      # this makes sure the browser is really there either way.
+      - name: Ensure Chrome is installed
+        run: npx puppeteer browsers install chrome
+
+      - name: Run pipeline
+        run: node start.js
+
+      - name: Upload logs and compiled JSON
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: run-${{ github.run_id }}
+          # Images are left out on purpose: data/ is ~190 MB and artifact storage is 500 MB.
+          path: |
+            logs/runs/
+            data/compiled/*.json
+          retention-days: 14
+          if-no-files-found: warn
