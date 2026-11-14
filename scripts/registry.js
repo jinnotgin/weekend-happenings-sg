@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Small admin CLI for the venue/event registry. Uses the same backend selection as the
-// pipeline (D1 when D1_DATABASE_ID + CLOUDFLARE_API_TOKEN are set, else the local SQLite file).
+// pipeline (D1 when D1_DATABASE_ID + D1_API_TOKEN are set, else the local SQLite file).
 //
 //   node scripts/registry.js stats
 //   node scripts/registry.js venues [search]        list venues (optionally filtered)

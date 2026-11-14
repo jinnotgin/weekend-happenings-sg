@@ -25,7 +25,7 @@ Go to **Repo → Settings → Secrets and variables → Actions → Secrets → 
 | `R2_SECRET_ACCESS_KEY` | Yes | R2 S3 secret |
 | `OPENAI_API_KEY` | Only if a task in `LLM_TASK_PREFERENCES` uses `openai` | |
 | `OPENROUTER_API_KEY` | Only if a task uses `openrouter` | |
-| `CLOUDFLARE_API_TOKEN` | For stable venue/event IDs | API token with **D1 Edit** on the registry database (see 1.3) |
+| `D1_API_TOKEN` | For stable venue/event IDs | API token with **D1 Edit** on the registry database (see 1.3) |
 
 If any of the four `GOOGLE_*`/`R2_*` groups is missing, the run fails within seconds with `Missing required environment variable: …`.
 
@@ -60,7 +60,7 @@ The pipeline gives venues and events stable IDs (so the frontend can star venues
 
 1. Create a production database and a separate dev database (Cloudflare dashboard → **Storage & Databases → D1**, or `npx wrangler d1 create nowinsg-registry` and `npx wrangler d1 create nowinsg-registry-dev`). Note each database ID.
 2. Create an API token (**My Profile → API Tokens → Create Token → Custom**) with **Account → D1 → Edit** for your account.
-3. Add `CLOUDFLARE_API_TOKEN` as a secret and `D1_DATABASE_ID` (production ID) as a variable. The account ID is taken from `R2_ACCOUNT_ID`; set `CLOUDFLARE_ACCOUNT_ID` only if D1 lives in a different account.
+3. Add `D1_API_TOKEN` as a secret and `D1_DATABASE_ID` (production ID) as a variable. The account ID is taken from `R2_ACCOUNT_ID`; set `CLOUDFLARE_ACCOUNT_ID` only if D1 lives in a different account.
 4. Locally, put the **dev** database ID in `.env`, or leave D1 unset to use `.registry/registry.sqlite`.
 
 The schema (`db/schema.sql`) is applied automatically at the start of every run. If D1 is unreachable, the run continues without IDs instead of failing.

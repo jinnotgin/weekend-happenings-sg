@@ -110,7 +110,7 @@ async function openRegistry() {
 		});
 		if (!durable && process.env.NODE_ENV === "production") {
 			logger.warn(
-				"Registry is using a local SQLite file: venue/event IDs will not survive this machine. Set D1_DATABASE_ID and CLOUDFLARE_API_TOKEN."
+				"Registry is using a local SQLite file: venue/event IDs will not survive this machine. Set D1_DATABASE_ID and D1_API_TOKEN."
 			);
 		}
 		return registry;

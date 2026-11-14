@@ -45,7 +45,7 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       # Venue/event registry (stable IDs for starring). Unset => throwaway local SQLite.
       D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      D1_API_TOKEN: ${{ secrets.D1_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:

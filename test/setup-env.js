@@ -18,4 +18,5 @@ for (const name of placeholders) {
 }
 // Never let tests talk to a real D1 database.
 delete process.env.D1_DATABASE_ID;
+delete process.env.D1_API_TOKEN;
 delete process.env.CLOUDFLARE_API_TOKEN;
