@@ -19,7 +19,8 @@ The root of the JSON object should be a key named `events`, with its value being
 Each **event object** must contain:
 -   `title` (String): The name of the event.
 -   `description` (String): A brief summary of the event (1-2 sentences), with a max of 250 characters, using all information across all sources.
--   `datetime` (String | null): The specific date, date range, or time of the event in a human readable way. Prefer the most precise date information. Return `null` if no usable information exists.
+-   `datetime` (String | null): The event period only — no opening hours. Format: `DD MMM YYYY – DD MMM YYYY` (e.g. `30 Oct 2026 – 29 Aug 2027`). Single date: `DD MMM YYYY`. Open-ended: `Until DD MMM YYYY`. Prefer the most precise date information across all sources. Return `null` if no usable information exists.
+-   `opening_hours` (String | null): Opening-hours schedule only — no dates. Group consecutive days with an en-dash (e.g. `Mon–Fri`), times with an en-dash (e.g. `10am–6.30pm`), different schedules on separate lines (e.g. `Sun–Thu: 10am–6.30pm\nFri–Sat: 10am–9pm`). Use `null` if no opening hours are mentioned or the event is a single-session event.
 -   `category` (Array of Strings): Classify the event using categories strictly from the **Category Guidance**.
 -   `locations` (Array of Objects): An array containing all unique location objects for the event, merged from all sources.
 -   `source` (Array of Integers): An array of the zero-based indices of the data sources this event was found in.
