@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import logger from "#lib/logger.js";
+import logger, { withLogContext } from "#lib/logger.js";
 import {
 	FIXED_URLS_TO_SCRAPE,
 	SCRAPER_OPTIONS,
@@ -172,6 +172,7 @@ export async function main() {
 	let scrapeFailures = 0;
 	for (let index = 0; index < urlsToScrape.length; index++) {
 		const url = urlsToScrape[index];
+		await withLogContext({ stage: "SCRAPE", sourceUrl: url, sourceIndex: index }, async () => {
 		try {
 			logger.info(
 				`[${index + 1}/${urlsToScrape.length}] Getting text from ${url}`,
@@ -233,11 +234,11 @@ export async function main() {
 			eventsData_combinedJsonString += `Source: ${index}\n${minifiedEventsJsonStr}\n===\n`;
 		} catch (error) {
 			scrapeFailures += 1;
-			logger.error(`Error occured when scraping ${url}`, {
-				errorMessage: error?.message,
-				stack: error?.stack,
+			logger.error(`[${index + 1}/${urlsToScrape.length}] Skipping source ${url}: ${error?.message}`, {
+				error,
 			});
 		}
+		});
 	}
 	logger.info("Stage: Scraping sources completed", {
 		successfulSources: sources.length,
@@ -477,8 +478,8 @@ export async function main() {
 				}
 
 				logger.warn(
-					`Attempt ${attempt + 1
-					}: Received null daterange for datetime: ${datetime}. Retrying...`
+					`Date range attempt ${attempt + 1}/${retryCount}: LLM returned no valid range for ${JSON.stringify(datetime)}${attempt + 1 < retryCount ? "; retrying" : ""}`,
+					{ datetime, response: dateRanges }
 				);
 			}
 
@@ -487,21 +488,21 @@ export async function main() {
 			);
 		}
 
-		await mapWithConcurrency(uniqueEventsData, DATE_RANGES_CONCURRENCY, async (item) => {
+		await mapWithConcurrency(uniqueEventsData, DATE_RANGES_CONCURRENCY, (item) =>
+			withLogContext({ stage: "DATE_RANGES", eventTitle: item?.title ?? null }, async () => {
 			try {
 				logger.info(`Processing date range for event: ${item.title}`);
 				const dateRange = await processDateRange(item.datetime);
 				item.daterange = dateRange;
 				logger.info(`Successfully added date range for event: ${item.title}`);
 			} catch (error) {
-				logger.error(
-					`Error processing date range for event: ${item.title}`,
-					error
-				);
-				// You might want to set a default value or flag here
+				logger.error(`Unable to generate date range for "${item.title}": ${error?.message}`, {
+					datetime: item?.datetime,
+					error,
+				});
 				item.daterange = "Error: Unable to process";
 			}
-		});
+		}));
 
 		logger.info("Stage: Structured datetimes generation completed");
 		}
@@ -510,8 +511,11 @@ export async function main() {
 		logger.info("Stage: Resolving event links and thumbnails");
 		for (let item of uniqueEventsData) {
 			const { title = "", location = "", datetime = "" } = item;
+			await withLogContext({ stage: "THUMBNAILS", eventTitle: title }, async () => {
 			try {
-				const searchQuery = `"${title} singapore`;
+				// Unquoted so Google matches the title loosely; an exact-phrase match on a long
+				// LLM-written title often returns few or no results.
+				const searchQuery = `${title} singapore`;
 				logger.info(`Getting link and thumbnails for ${title}`);
 
 				const { firstWebUrl, savedImages = [] } = await retryAsyncFunction(
@@ -561,8 +565,9 @@ export async function main() {
 					try {
 						selectedThumbnail = await persistCandidateThumbnail(selectedImage);
 					} catch (error) {
-						logger.error(`Unable to persist thumbnail for ${title}`, {
-							errorMessage: error?.message,
+						logger.error(`Unable to persist thumbnail for "${title}": ${error?.message}`, {
+							selectedImage: selectedImage?.absolutePath,
+							error,
 						});
 					}
 				}
@@ -589,10 +594,11 @@ export async function main() {
 					}
 				}
 			} catch (error) {
-				logger.error(
-					`Unable to fetch link / image for ${title}: ${error.message}`
-				);
+				logger.error(`No link or thumbnail for "${title}": ${error?.message}`, {
+					error,
+				});
 			}
+			});
 		}
 		logger.info("Stage: Event link and thumbnail resolution completed");
 		}
@@ -605,8 +611,8 @@ export async function main() {
 		]);
 		stageResults.forEach((result, index) => {
 			if (result.status === "rejected") {
-				logger.error(`Enrichment stage ${stageNames[index]} failed`, {
-					errorMessage: result.reason?.message,
+				logger.error(`Enrichment stage ${stageNames[index]} crashed: ${result.reason?.message}`, {
+					error: result.reason,
 				});
 			}
 		});
@@ -639,8 +645,8 @@ export async function main() {
 		logger.summary("Remote upload completed successfully.");
 	} catch (error) {
 		logger.error(
-			"Unable to upload results to R2 after retries. Data remains available locally.",
-			{ errorMessage: error?.message }
+			`Unable to upload results to R2 after retries: ${error?.message}. Data remains available locally.`,
+			{ error }
 		);
 		// Keep going so the run summary is logged, but flag the run as failed.
 		process.exitCode = 1;
