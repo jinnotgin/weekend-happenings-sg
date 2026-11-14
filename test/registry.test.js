@@ -40,14 +40,14 @@ function fakeVenueLlm(prompt) {
 
 const failingLlm = () => Promise.reject(new Error("LLM unavailable"));
 
-test("normalizeVenueName strips addresses and units while preserving qualifiers", () => {
-	assert.equal(normalizeVenueName("Asian Civilisations Museum, 1 Empress Place"), "asian civilisations museum");
+test("normalizeVenueName retains addresses, units and branch qualifiers", () => {
+	assert.equal(normalizeVenueName("Asian Civilisations Museum, 1 Empress Place"), "asian civilisations museum 1 empress place");
 	assert.equal(normalizeVenueName("Asian Civilisations Museum"), "asian civilisations museum");
 	assert.equal(
 		normalizeVenueName("Changi Point Ferry Terminal, 51 Lor Bekukong, Singapore 499172"),
-		"changi point ferry terminal"
+		"changi point ferry terminal 51 lor bekukong singapore 499172"
 	);
-	assert.equal(normalizeVenueName("National Gallery Singapore, 1 St Andrew's Road"), "national gallery");
+	assert.equal(normalizeVenueName("National Gallery Singapore, 1 St Andrew's Road"), "national gallery singapore 1 st andrews road");
 	assert.equal(normalizeVenueName("Alliance Française de Singapour"), "alliance francaise de singapour");
 	assert.equal(normalizeVenueName("Arena @ Expo"), "arena at expo");
 });
@@ -111,7 +111,7 @@ test("deterministic fallback assigns IDs when the LLM fails", async () => {
 	];
 	await resolveVenuesForEvents(events, registry, { llm: failingLlm });
 	assert.ok(events[0].locations[0].venue_id);
-	assert.equal(events[0].locations[0].venue_id, events[1].locations[0].venue_id);
+	assert.notEqual(events[0].locations[0].venue_id, events[1].locations[0].venue_id, "uncertain unit variants remain separate without model matching");
 });
 
 test("merged venues redirect and export", async () => {

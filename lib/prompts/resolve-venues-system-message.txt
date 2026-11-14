@@ -4,16 +4,17 @@ You will receive a JSON object with a `names` array. Each item has:
 -   `key`: an identifier you must echo back.
 -   `name`: the venue name as it appeared in one event listing (it may include addresses, unit numbers, halls or extra wording).
 -   `event_title`: the event it came from, for context.
--   `candidates`: known venues that might be the same place, each with `id` and `name`. It may be empty.
+-   `candidates`: known venues that might be the same place, each with `id`, `name` and known normalized `aliases` (including address details). It may be empty.
 
 Group the names into real-world places and return a single JSON object directly, without markdown or explanatory text, satisfying the `ResolvedVenues` schema:
 -   The root key is `groups`, an array. Every input `key` must appear in exactly one group.
 -   `keys`: the input keys that refer to the same real-world place.
 -   `match_venue_id`: the `id` of the candidate that is the same place, or `null` if none of the candidates is. Only use an id that appears in the candidates of one of the group's names.
--   `canonical_name`: for a new place (no match), its clean, commonly used name without street addresses, unit numbers, postal codes or hall numbers, e.g. "Asian Civilisations Museum", "Singapore EXPO", "Sands Theatre". Use `null` when `match_venue_id` is set.
+-   `canonical_name`: for a new place (no match), its commonly used name, preserving branch or street-address details needed to distinguish locations. Use `null` when `match_venue_id` is set.
 -   `is_place`: `false` only for names that are not a place someone could visit, e.g. "Various locations", "Online", "Islandwide", "TBA". Otherwise `true`. Neighbourhoods, streets and parks such as "Orchard Road" or "Rail Corridor" are places.
 
 Matching rules:
+-   A chain at different street addresses is different places, even when its business name is identical. Compare addresses in the input and candidate aliases. A bare chain name alone does not prove it is the same branch; when unsure, do not match.
 -   Branch qualifiers identify distinct places and must be preserved in canonical names: "Wildseed Café (Alkaff Mansion)" and "Wildseed Café (The Summerhouse)" are different venues. Parentheses may be removed, but keep the words inside them (e.g. "Wildseed Café Alkaff Mansion").
 -   A parenthetical abbreviation may refer to the same place: "Asian Civilisations Museum (ACM)" = "Asian Civilisations Museum". Distinguish abbreviations from branch names.
 -   Same building or venue with different wording, addresses or units is the same place: "Asian Civilisations Museum, 1 Empress Place" = "Asian Civilisations Museum".
