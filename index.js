@@ -33,8 +33,15 @@ import {
 	getWebLinkAndSaveImage,
 } from "#lib/google-search.js";
 import { selectBestEventImage } from "#lib/image-selection.js";
-import { locateVenuesForEvents } from "#lib/locate-venues.js";
-import { uploadAndUpdateLatest } from "#lib/upload-r2.js";
+import { locateVenuesForEvents, locateRegistryVenues } from "#lib/locate-venues.js";
+import { uploadAndUpdateLatest, downloadObject } from "#lib/upload-r2.js";
+import { createExecutorFromEnv } from "#lib/registry/executors.js";
+import { Registry } from "#lib/registry/store.js";
+import { resolveVenuesForEvents } from "#lib/registry/resolve-venues.js";
+import {
+	matchEventsToRegistry,
+	reusableDateRange,
+} from "#lib/registry/resolve-events.js";
 
 const COMPILED_IMAGE_DIR = getDirectoryPath("compiled");
 const UNIQUE_EVENT_BATCH_SIZE = 30;
@@ -89,6 +96,32 @@ function chunkArray(array, size) {
 	return chunks;
 }
 
+// Opens the venue/event registry (Cloudflare D1, or a local SQLite file when D1 is not
+// configured). Returns null on failure: the run then continues in legacy mode, without
+// stable IDs, rather than inventing IDs that would not be persisted.
+async function openRegistry() {
+	try {
+		const { executor, durable } = await createExecutorFromEnv();
+		const registry = await Registry.open({ executor, durable });
+		logger.info("Registry opened", {
+			backend: executor.describe(),
+			venues: registry.venues.size,
+			recentEvents: registry.events.size,
+		});
+		if (!durable && process.env.NODE_ENV === "production") {
+			logger.warn(
+				"Registry is using a local SQLite file: venue/event IDs will not survive this machine. Set D1_DATABASE_ID and CLOUDFLARE_API_TOKEN."
+			);
+		}
+		return registry;
+	} catch (error) {
+		logger.error("Unable to open registry; continuing without stable IDs", {
+			errorMessage: error?.message,
+		});
+		return null;
+	}
+}
+
 function formatUniqueEventsForPrompt(events = []) {
 	return events
 		.map(({ title }) => `- ${title}`)
@@ -115,6 +148,10 @@ export async function main() {
 	await clearDataDirectory();
 	logger.summary("Run started");
 	logger.info("Stage: Data directory cleared");
+
+	let registry = await openRegistry();
+	// Consolidated event object -> registry record of the same event from an earlier run.
+	let eventMatches = new Map();
 
 	let eventsData_combinedJsonString = "";
 	const eventsData = {};
@@ -401,6 +438,24 @@ export async function main() {
 		getFilePath("tmp", `unique_events_data`, "json")
 	);
 
+	if (uniqueEventsData.length > 0 && registry) {
+		// Stable identities before enrichment, so enrichment can skip work for known
+		// venues (location) and known events (date range, thumbnail).
+		try {
+			logger.info("Stage: Resolving venues against registry");
+			await resolveVenuesForEvents(uniqueEventsData, registry);
+			logger.info("Stage: Matching events against registry");
+			eventMatches = await matchEventsToRegistry(uniqueEventsData, registry);
+		} catch (error) {
+			logger.error("Registry resolution failed; continuing without stable IDs", {
+				errorMessage: error?.message,
+				stack: error?.stack,
+			});
+			registry = null;
+			eventMatches = new Map();
+		}
+	}
+
 	if (uniqueEventsData.length > 0) {
 		// The three enrichment stages below run CONCURRENTLY (Promise.allSettled at the end).
 		// Each writes different fields of an event (locations / daterange / link+thumbnail)
@@ -418,7 +473,10 @@ export async function main() {
 			logger.info("Stage: Locating event venues", {
 				eventCount: uniqueEventsData.length,
 			});
-			const locateCalls = await locateVenuesForEvents(uniqueEventsData);
+			// With a registry only venues without stored coordinates cost an LLM call.
+			const locateCalls = registry
+				? await locateRegistryVenues(uniqueEventsData, registry)
+				: await locateVenuesForEvents(uniqueEventsData);
 			logger.info("Stage: Venue location completed", { locateCalls });
 		}
 
@@ -477,7 +535,14 @@ export async function main() {
 			);
 		}
 
+		let reusedDateRanges = 0;
 		await mapWithConcurrency(uniqueEventsData, DATE_RANGES_CONCURRENCY, async (item) => {
+			const reusable = reusableDateRange(item, eventMatches.get(item));
+			if (reusable) {
+				item.daterange = reusable;
+				reusedDateRanges += 1;
+				return;
+			}
 			try {
 				logger.info(`Processing date range for event: ${item.title}`);
 				const dateRange = await processDateRange(item.datetime);
@@ -493,13 +558,28 @@ export async function main() {
 			}
 		});
 
-		logger.info("Stage: Structured datetimes generation completed");
+		logger.info("Stage: Structured datetimes generation completed", { reusedDateRanges });
 		}
 
 		async function runThumbnailsStage() {
 		logger.info("Stage: Resolving event links and thumbnails");
+		let reusedThumbnails = 0;
 		for (let item of uniqueEventsData) {
 			const { title = "", location = "", datetime = "" } = item;
+			// Known event: copy last run's thumbnail from R2 instead of searching again.
+			const stored = eventMatches.get(item);
+			if (stored?.thumbnail && stored?.thumbnailKey) {
+				const reused = await downloadObject(
+					stored.thumbnailKey,
+					path.join(COMPILED_IMAGE_DIR, stored.thumbnail)
+				);
+				if (reused) {
+					item.link = stored.link ?? null;
+					item.thumbnail = stored.thumbnail;
+					reusedThumbnails += 1;
+					continue;
+				}
+			}
 			try {
 				const searchQuery = `"${title} singapore`;
 				logger.info(`Getting link and thumbnails for ${title}`);
@@ -584,7 +664,7 @@ export async function main() {
 				);
 			}
 		}
-		logger.info("Stage: Event link and thumbnail resolution completed");
+		logger.info("Stage: Event link and thumbnail resolution completed", { reusedThumbnails });
 		}
 
 		const stageNames = ["LOCATE_VENUES", "DATE_RANGES", "THUMBNAILS"];
@@ -604,6 +684,18 @@ export async function main() {
 		logger.warn("No unique event data available; skipping date range and asset enrichment stages");
 	}
 
+	if (registry) {
+		for (const item of uniqueEventsData) {
+			const record = registry.upsertEvent(item, eventMatches.get(item)?.id ?? null);
+			item.id = record.id;
+			item.first_seen = record.firstSeen;
+		}
+		saveAsText(
+			JSON.stringify(registry.exportPublicVenues()),
+			getFilePath("compiled", `venues`, "json")
+		);
+	}
+
 	logger.info("Stage: Writing compiled artifacts to disk");
 
 	saveAsText(
@@ -617,13 +709,15 @@ export async function main() {
 	);
 
 	const compiledDir = getDirectoryPath("compiled");
+	let uploadResult = null;
 	try {
 		logger.info("Stage: Uploading compiled artifacts to R2");
-		await retryAsyncFunction(async () => {
-			const success = await uploadAndUpdateLatest(compiledDir);
-			if (!success) {
+		uploadResult = await retryAsyncFunction(async () => {
+			const result = await uploadAndUpdateLatest(compiledDir);
+			if (!result) {
 				throw new Error("Upload to R2 reported failure.");
 			}
+			return result;
 		}, 2);
 		logger.info("Remote upload completed successfully.");
 		logger.summary("Remote upload completed successfully.");
@@ -634,6 +728,21 @@ export async function main() {
 		);
 		// Keep going so the run summary is logged, but flag the run as failed.
 		process.exitCode = 1;
+	}
+
+	if (registry) {
+		try {
+			logger.info("Stage: Saving registry");
+			if (uploadResult?.archiveFolder) {
+				registry.setThumbnailKeys((filename) => `${uploadResult.archiveFolder}/${filename}`);
+			}
+			const statementCount = await retryAsyncFunction(() => registry.commit(), 2);
+			logger.summary("Registry saved", { statementCount, ...registry.stats });
+		} catch (error) {
+			// IDs in this run's events.json are not persisted: next run may assign new ones.
+			logger.error("Unable to save registry", { errorMessage: error?.message });
+			process.exitCode = 1;
+		}
 	}
 
 	logger.summary("Run completed", {

@@ -25,6 +25,7 @@ Go to **Repo → Settings → Secrets and variables → Actions → Secrets → 
 | `R2_SECRET_ACCESS_KEY` | Yes | R2 S3 secret |
 | `OPENAI_API_KEY` | Only if a task in `LLM_TASK_PREFERENCES` uses `openai` | |
 | `OPENROUTER_API_KEY` | Only if a task uses `openrouter` | |
+| `CLOUDFLARE_API_TOKEN` | For stable venue/event IDs | API token with **D1 Edit** on the registry database (see 1.3) |
 
 If any of the four `GOOGLE_*`/`R2_*` groups is missing, the run fails within seconds with `Missing required environment variable: …`.
 
@@ -49,14 +50,40 @@ gh secret list
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `PERFORM_WEB_SEARCH` | `true` | Set to `false` to make scheduled runs fetch only `FIXED_URLS_TO_SCRAPE`. |
+| `D1_DATABASE_ID` | unset | ID of the D1 registry database (see 1.3). Without it, runs fall back to a throwaway local SQLite file and IDs change every run. |
 
 Manual runs have their own dropdown for this, which overrides the variable for that run.
 
-### 1.3 Get the workflow onto `main`
+### 1.3 Venue/event registry (Cloudflare D1)
+
+The pipeline gives venues and events stable IDs (so the frontend can star venues) and keeps them in a Cloudflare D1 database. Setup, once:
+
+1. Create a production database and a separate dev database (Cloudflare dashboard → **Storage & Databases → D1**, or `npx wrangler d1 create nowinsg-registry` and `npx wrangler d1 create nowinsg-registry-dev`). Note each database ID.
+2. Create an API token (**My Profile → API Tokens → Create Token → Custom**) with **Account → D1 → Edit** for your account.
+3. Add `CLOUDFLARE_API_TOKEN` as a secret and `D1_DATABASE_ID` (production ID) as a variable. The account ID is taken from `R2_ACCOUNT_ID`; set `CLOUDFLARE_ACCOUNT_ID` only if D1 lives in a different account.
+4. Locally, put the **dev** database ID in `.env`, or leave D1 unset to use `.registry/registry.sqlite`.
+
+The schema (`db/schema.sql`) is applied automatically at the start of every run. If D1 is unreachable, the run continues without IDs instead of failing.
+
+Admin commands (merge duplicate venues, rename, add aliases) use the same configuration:
+
+```bash
+npm run registry -- stats
+```
+
+```bash
+npm run registry -- venues gallery
+```
+
+```bash
+npm run registry -- merge v_duplicate-id v_surviving-id
+```
+
+### 1.4 Get the workflow onto `main`
 
 GitHub only runs scheduled workflows from the **default branch**. The schedule starts once `.github/workflows/update-events.yml` is on `main`. Actions must be enabled for the repo (**Settings → Actions → General → Allow all actions**). It is on by default.
 
-### 1.4 Guard against charges (recommended)
+### 1.5 Guard against charges (recommended)
 
 - **No payment method on the account:** you can never be billed. Once the monthly allowance is used up, jobs are blocked until the next month.
 - **A payment method is on file:** go to **Settings (your account) → Billing and licensing → Budgets and alerts**, create an **Actions** budget of **$0** and turn on *Stop usage when budget limit is reached*.

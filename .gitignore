@@ -130,3 +130,5 @@ dist
 google-service-account.json
 database.sqlite
 data/
+# Local venue/event registry (dev fallback when D1 is not configured)
+.registry/
